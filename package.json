@@ -1,0 +1,85 @@
+{
+    "name": "akinon-codelens",
+    "displayName": "Akinon CodeLens",
+    "description": "Akinon CodeLens is a CodeLens extension for CodeLens that adds a new command to the CodeLens menu to show the code of the selected code lens.",
+    "version": "1.0.0",
+    "publisher": "Mustafa KURU",
+    "private": true,
+    "icon": "images/logo.png",
+    "engines": {
+        "vscode": "^1.26.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onLanguage:typescript",
+        "onLanguage:typescriptreact",
+        "onLanguage:javascript",
+        "onLanguage:javascriptreact"
+    ],
+    "main": "./out/extension",
+    "contributes": {
+        "commands": [
+            {
+                "title": "Enable CodeLens",
+                "command": "akinon-codelens.enableCodeLens",
+                "category": "Akinon CodeLens"
+            },
+            {
+                "title": "Disable Codelens",
+                "command": "akinon-codelens.disableCodeLens",
+                "category": "Akinon CodeLens"
+            },
+            {
+                "title": "Refresh Language Resources",
+                "command": "akinon-codelens.refreshLanguageResources",
+                "category": "Akinon CodeLens"
+            }
+        ],
+        "configuration": {
+            "properties": {
+                "akinon-codelens.enableCodeLens": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "akinon-codelens.languageGlobPattern": {
+                    "type": "string",
+                    "description": "Language file glob patterns",
+                    "editPresentation": "singlelineText",
+                    "default": "**/locales/*.json"
+                },
+                "akinon-codelens.languageTranslatorTemplate": {
+                    "type": "string",
+                    "description": "Language translate template",
+                    "editPresentation": "singlelineText",
+                    "default": "T('{0}')"
+                },
+                "akinon-codelens.languageTranslatorRegex": {
+                    "type": "string",
+                    "description": "Regex to detect hover or codeLenses for Language",
+                    "editPresentation": "singlelineText",
+                    "default": "(?<=T\\(['\"])[a-zA-Z0-9.-]+?(?=['\"]\\))"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "package": "vsce package",
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "lint": "eslint . --ext .ts,.tsx",
+        "watch": "tsc -watch -p ./"
+    },
+    "devDependencies": {
+        "@types/node": "^12.12.0",
+        "@types/vscode": "^1.26.0",
+        "@typescript-eslint/eslint-plugin": "^4.16.0",
+        "@typescript-eslint/parser": "^4.16.0",
+        "eslint": "^7.21.0",
+        "typescript": "^4.4.3"
+    },
+    "dependencies": {
+        "fastest-levenshtein": "^1.0.12"
+    }
+}
