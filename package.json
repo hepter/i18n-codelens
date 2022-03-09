@@ -3,7 +3,11 @@
     "displayName": "Akinon CodeLens",
     "description": "Akinon CodeLens is a CodeLens extension for CodeLens that adds a new command to the CodeLens menu to show the code of the selected code lens.",
     "version": "1.0.0",
-    "publisher": "Mustafa KURU",
+    "publisher": "mustafa-kuru",
+    "author": {
+        "email": "mustafakuru042@gmail.com",
+        "name": "Mustafa Kuru"
+    },
     "private": true,
     "icon": "images/logo.png",
     "engines": {
