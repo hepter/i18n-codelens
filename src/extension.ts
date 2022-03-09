@@ -6,6 +6,7 @@ import ActionEnableDisableCodeLens from './actions/ActionEnableDisableCodeLens';
 import ActionRefreshLanguageResource from './actions/ActionRefreshLanguageResource';
 import { CodelensProvider } from './providers/CodelensProvider';
 import CompletionItemProvider from './providers/CompletionItemProvider';
+import { DecoratorProvider } from './providers/DecoratorProvider';
 import { HoverProvider } from './providers/HoverProvider';
 import ResourceWatcher from './watcher/ResourceWatcher';
 // this method is called when your extension is activated
@@ -33,6 +34,8 @@ export function activate(context: ExtensionContext) {
     disposables.push(commands.registerCommand("akinon-codelens.codelensActionAddLanguageResource", ActionAddLanguageResource, ''));
 
     context.subscriptions.push(...disposables);
+
+    new DecoratorProvider(context);
 
     console.log('Congratulations, extension "akinon-codelens" is now active!');
 }
