@@ -12,6 +12,7 @@ export default async (key: string, missingTranslationList: string[]) => {
 		const inputValue = await window.showInputBox({
 			validateInput: (input) => input.length ? null : "Please enter a translation",
 			prompt: `Please enter the '${languageKey}' translation of the key '${key}' (${counter}/${missingTranslationList.length})`,
+			ignoreFocusOut: true,
 			value: capitalizeFirstLetter(key.replace(/\./g, " ")),
 		});
 
