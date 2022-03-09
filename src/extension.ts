@@ -7,6 +7,7 @@ import ActionRefreshLanguageResource from './actions/ActionRefreshLanguageResour
 import { CodelensProvider } from './providers/CodelensProvider';
 import CompletionItemProvider from './providers/CompletionItemProvider';
 import { HoverProvider } from './providers/HoverProvider';
+import ResourceWatcher from './watcher/ResourceWatcher';
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 
@@ -19,6 +20,8 @@ export function activate(context: ExtensionContext) {
     const hoverProvider = new HoverProvider();
     const completionItemProvider = new CompletionItemProvider();
 
+    disposables.push(ResourceWatcher());
+
     disposables.push(languages.registerCodeLensProvider(['javascript', 'typescript'], codelensProvider));
     disposables.push(languages.registerHoverProvider(['javascript', 'typescript'], hoverProvider));
     disposables.push(languages.registerCompletionItemProvider(['javascript', 'typescript'], completionItemProvider, '.'));
@@ -28,6 +31,8 @@ export function activate(context: ExtensionContext) {
     disposables.push(commands.registerCommand("akinon-codelens.disableCodeLens", ActionEnableDisableCodeLens(false)));
     disposables.push(commands.registerCommand("akinon-codelens.refreshLanguageResources", ActionRefreshLanguageResource));
     disposables.push(commands.registerCommand("akinon-codelens.codelensActionAddLanguageResource", ActionAddLanguageResource, ''));
+
+    context.subscriptions.push(...disposables);
 
     console.log('Congratulations, extension "akinon-codelens" is now active!');
 }

@@ -13,30 +13,54 @@ export type LanguageResource = {
 }[];
 
 let languageResourcesFilesCache: LanguageResource | null = null;
-export async function getLanguageResourcesFiles(clearCache = false): Promise<LanguageResource> {
+
+const generateLanguageResource = (fsPath: string) => {
+	const data = fs.readFileSync(fsPath);
+	const filePath = path.parse(fsPath);
+	const keyValuePairs = JSON.parse(data.toString());
+
+	return ({
+		path: fsPath,
+		fileName: filePath.name,
+		dir: filePath.dir,
+		keyValuePairs
+	});
+};
+
+
+export async function getLanguageResourcesFiles(clearCache = false, fileFsPath?: string): Promise<LanguageResource> {
 
 	const response: LanguageResource = [];
 	const globPattern = vscode.workspace.getConfiguration("akinon-codelens").get("languageGlobPattern", "**/locales/*.json");
 	if (languageResourcesFilesCache?.length && !clearCache) {
 		return languageResourcesFilesCache;
 	}
-	const vscodeUriList = await vscode.workspace.findFiles(globPattern, "**/node_modules/**");
+	else if (fileFsPath) {
+		languageResourcesFilesCache ??= [];
+		const oldResourceIndex = languageResourcesFilesCache.findIndex(item => item.path === fileFsPath);
+		try {
+			const newResourceFile = generateLanguageResource(fileFsPath);
+			if (newResourceFile) {
+				if (oldResourceIndex > -1) {
+					languageResourcesFilesCache[oldResourceIndex] = newResourceFile;
+				} else {
+					languageResourcesFilesCache.push(newResourceFile);
+				}
+			}
+		} catch (error) {
+			console.log("Resource file parse error:" + fileFsPath, error);
+		}
+		return languageResourcesFilesCache;
+	}
 
-	console.log(`Language files ${vscodeUriList.length ? "" : "not"} found!`);
+	const vscodeUriList = await vscode.workspace.findFiles(globPattern, "**/node_modules/**");
+	const fileCount = vscodeUriList.length;
+	console.log(`${fileCount + " " || ""}Language files${fileCount ? "" : " not"} found!`);
 
 
 	for (const uri of vscodeUriList) {
 		try {
-			const data = fs.readFileSync(uri.path);
-			const filePath = path.parse(uri.path);
-			const keyValuePairs = JSON.parse(data.toString());
-
-			response.push({
-				path: uri.path,
-				fileName: filePath.name,
-				dir: filePath.dir,
-				keyValuePairs
-			});
+			response.push(generateLanguageResource(uri.fsPath));
 		} catch (error) {
 			console.log("Resource file parse error:" + uri, error);
 		}
@@ -122,5 +146,5 @@ export async function addNewLanguageTranslation(resourceKey: string, translation
 
 
 export function capitalizeFirstLetter(str: string) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
+	return str.charAt(0).toUpperCase() + str.slice(1);
 }
