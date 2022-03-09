@@ -57,12 +57,6 @@
                     "editPresentation": "singlelineText",
                     "default": "**/locales/*.json"
                 },
-                "akinon-codelens.languageTranslatorTemplate": {
-                    "type": "string",
-                    "description": "Language translate template",
-                    "editPresentation": "singlelineText",
-                    "default": "T('{0}')"
-                },
                 "akinon-codelens.languageTranslatorRegex": {
                     "type": "string",
                     "description": "Regex to detect hover or codeLenses for Language",
