@@ -13,7 +13,7 @@ export class CodelensProvider implements vscode.CodeLensProvider {
         languageKey: string,
         missingTranslationList: string[]
     }>();
-    constructor() {
+    constructor(context: vscode.ExtensionContext) {
         this.refreshRegexFromConfig();
 
         vscode.workspace.onDidChangeConfiguration((e) => {
@@ -21,7 +21,7 @@ export class CodelensProvider implements vscode.CodeLensProvider {
             if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
                 this.refreshRegexFromConfig();
             }
-        });
+        }, null, context.subscriptions);
     }
 
     private refreshRegexFromConfig() {

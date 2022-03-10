@@ -5,13 +5,15 @@ export class HoverProvider implements vscode.HoverProvider {
 
 	private regex!: RegExp;
 
-	constructor() {
+	constructor(context: vscode.ExtensionContext) {
+
 		this.refreshRegexFromConfig();
+
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
 				this.refreshRegexFromConfig();
 			}
-		});
+		}, null, context.subscriptions);
 	}
 
 	private refreshRegexFromConfig() {
@@ -25,19 +27,19 @@ export class HoverProvider implements vscode.HoverProvider {
 		let hasMatch = false;
 		const hoverText: vscode.MarkdownString = new vscode.MarkdownString();
 		const range = document.getWordRangeAtPosition(position, new RegExp(this.regex)); ///(?<=['"])[\w-_.]+(?=['"])/);
-		const word = document.getText(range);
+		const resourceKey = document.getText(range);
 
-		if (!range || !word) {
+		if (!range || !resourceKey) {
 			return;
 		}
 
 		resourceList.forEach((item) => {
 
-			if (item.keyValuePairs[word]) {
+			if (item.keyValuePairs[resourceKey]) {
 				if (!hasMatch) {
-					hoverText.appendMarkdown(`**KEY**: ${word}  \n\n\n`);
+					hoverText.appendMarkdown(`**KEY**: ${resourceKey}  \n\n\n`);
 				}
-				hoverText.appendMarkdown(`- **${item.fileName}**: ${item.keyValuePairs[word]}  \n\n`);
+				hoverText.appendMarkdown(`- **${item.fileName}**: ${item.keyValuePairs[resourceKey]}  \n\n`);
 				hasMatch = true;
 			}
 
