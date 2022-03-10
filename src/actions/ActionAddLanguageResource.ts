@@ -1,17 +1,32 @@
 
 import { window } from 'vscode';
-import { addNewLanguageTranslation, capitalizeFirstLetter } from '../Utils';
+import {
+	addNewOrUpdateLanguageTranslation,
+	capitalizeFirstLetter,
+	getLanguageResourcesFiles
+} from '../Utils';
 
-export default async (key: string, missingTranslationList: string[]) => {
+export default async (key: string, missingTranslationList: string[] = []) => {
 
 
 	let counter = 1;
 	const newTranslationsData: { [key: string]: string } = {};
-	for (const languageKey of missingTranslationList) {
+	const languageFileNames = missingTranslationList;
+
+	if (languageFileNames.length === 0) {
+		const resources = await getLanguageResourcesFiles();
+		for (const resource of resources) {
+			if (!resource.keyValuePairs[key]) {
+				languageFileNames.push(resource.fileName);
+			}
+		}
+	}
+
+	for (const languageKey of languageFileNames) {
 
 		const inputValue = await window.showInputBox({
 			validateInput: (input) => input.length ? null : "Please enter a translation",
-			prompt: `Please enter the '${languageKey}' translation of the key '${key}' (${counter}/${missingTranslationList.length})`,
+			prompt: `Please enter the '${languageKey}' translation of the key '${key}' (${counter}/${languageFileNames.length})`,
 			ignoreFocusOut: true,
 			value: capitalizeFirstLetter(key.replace(/\./g, " ")),
 		});
@@ -24,8 +39,8 @@ export default async (key: string, missingTranslationList: string[]) => {
 		counter++;
 	}
 
-	if (Object.keys(newTranslationsData).length == missingTranslationList.length) {
-		addNewLanguageTranslation(key, newTranslationsData);
+	if (Object.keys(newTranslationsData).length == languageFileNames.length) {
+		addNewOrUpdateLanguageTranslation(key, newTranslationsData);
 	}
 
 
