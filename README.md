@@ -1,7 +1,16 @@
 # Akinon CodeLens
 
+
+## Build
+
+- Install dependencies with `npm install`
+- Run `vsce package` to create a package.vsix file.
+
+
+
 ## Demo
 ![Demo](/demo.gif)
+
 
 
 ## Settings
@@ -34,4 +43,6 @@
 	 
 
  
+
+
 
