@@ -1,11 +1,14 @@
 # Akinon CodeLens
 
+Akinon CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.
 
-## Build
+It can be made to work in various projects by changing the regex information and glob pattern.
 
-- Install dependencies with `npm install`
-- Run `vsce package` to create a package.vsix file.
 
+
+
+# Extension link
+VS Code Extension: [Akinon CodeLens](https://marketplace.visualstudio.com/items?itemName=mustafa-kuru.akinon-codelens)
 
 
 ## Demo
@@ -14,7 +17,7 @@
 
 
 ## Settings
- 
+ change git remote origin address: 
 
 #### `enableCodeLens`
 

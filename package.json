@@ -1,7 +1,7 @@
 {
     "name": "akinon-codelens",
     "displayName": "Akinon CodeLens",
-    "description": "Akinon CodeLens is a CodeLens extension for CodeLens that adds a new command to the CodeLens menu to show the code of the selected code lens.",
+    "description": "Akinon CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.",
     "version": "1.0.0",
     "publisher": "mustafa-kuru",
     "author": {
