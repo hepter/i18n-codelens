@@ -42,7 +42,7 @@ export class DecoratorProvider {
 			if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
 				this.refreshRegexFromConfig();
 			}
-		});
+		}, this.context.subscriptions);
 		this.initialize();
 	}
 
@@ -67,6 +67,12 @@ export class DecoratorProvider {
 			}
 		}, null, this.context.subscriptions);
 
+		const resourceGlobPattern = vscode.workspace.getConfiguration("akinon-codelens").get("languageGlobPattern", "**/locales/*.json");
+		const watcher = vscode.workspace.createFileSystemWatcher(resourceGlobPattern, false, false, true);
+		watcher.onDidChange((e) => {
+			this.triggerUpdateDecorations(true);
+		}, null, this.context.subscriptions);
+
 	}
 
 	private refreshRegexFromConfig = () => {
@@ -75,24 +81,25 @@ export class DecoratorProvider {
 	}
 
 
-	updateDecorations = async () => {
-		if (!this.activeEditor) {
+	public updateDecorations = async (textEditor?: vscode.TextEditor) => {
+		const activeEditor = textEditor || this.activeEditor;
+		const isDecorationEnabled = vscode.workspace.getConfiguration("akinon-codelens").get("enableUnderlineResourceDecorator", true);
+		if (!activeEditor || !isDecorationEnabled) {
 			return;
 		}
 		const resourceList = await getLanguageResourcesFiles();
 
 
-
-		const text = this.activeEditor.document.getText();
+		const text = activeEditor.document.getText();
 		const successResources: vscode.DecorationOptions[] = [];
 		const errorResources: vscode.DecorationOptions[] = [];
 		const warnResources: vscode.DecorationOptions[] = [];
 		let match;
 		while ((match = this.regex.exec(text))) {
-			const startPos = this.activeEditor.document.positionAt(match.index);
-			const endPos = this.activeEditor.document.positionAt(match.index + match[0].length);
+			const startPos = activeEditor.document.positionAt(match.index);
+			const endPos = activeEditor.document.positionAt(match.index + match[0].length);
 			const range = new vscode.Range(startPos, endPos);
-			const word = this.activeEditor.document.getText(range);
+			const word = activeEditor.document.getText(range);
 			const decoration = { range };
 
 			let matchCount = 0;
@@ -112,9 +119,10 @@ export class DecoratorProvider {
 			}
 		}
 		this.regex.lastIndex = 0;
-		this.activeEditor.setDecorations(this.resourceExistDecorationType, successResources);
-		this.activeEditor.setDecorations(this.resourceNotFoundDecorationType, errorResources);
-		this.activeEditor.setDecorations(this.resourceWarnDecorationType, warnResources);
+		activeEditor.setDecorations(this.resourceExistDecorationType, successResources);
+		activeEditor.setDecorations(this.resourceNotFoundDecorationType, errorResources);
+		activeEditor.setDecorations(this.resourceWarnDecorationType, warnResources);
+
 	}
 
 	triggerUpdateDecorations = (throttle: boolean) => {
