@@ -49,11 +49,27 @@
             "properties": {
                 "akinon-codelens.enableCodeLens": {
                     "type": "boolean",
-                    "default": true
+                    "default": true,
+                    "description": "Enable or disable the CodeLens for missing resource code."
+                },
+                "akinon-codelens.enableResourceAutoSaveInsertOrUpdate": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable auto save for resource file(s) that saves files after inserted or updated resource data."
+                },
+                "akinon-codelens.enableUnderlineResourceDecorator": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable or disable the underline decorator for missing resource code(s)."
+                },
+                "akinon-codelens.enableAutoFocusDocumentAfterAltered": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable auto focus document after inserted or updated target resource file(s)."
                 },
                 "akinon-codelens.languageGlobPattern": {
                     "type": "string",
-                    "description": "Language file glob patterns",
+                    "description": "Language file glob patterns. (Language resource files must be key value object files.)",
                     "editPresentation": "singlelineText",
                     "default": "**/locales/*.json"
                 },
