@@ -31,7 +31,7 @@ const generateLanguageResource = (fsPath: string) => {
 export async function getLanguageResourcesFiles(clearCache = false, fileFsPath?: string): Promise<LanguageResource> {
 
 	const response: LanguageResource = [];
-	const globPattern = vscode.workspace.getConfiguration("akinon-codelens").get("languageGlobPattern", "**/locales/*.json");
+	const globPattern = vscode.workspace.getConfiguration("i18n-codelens").get("languageGlobPattern", "**/locales/*.json");
 	if (languageResourcesFilesCache?.length && !clearCache) {
 		return languageResourcesFilesCache;
 	}
@@ -77,8 +77,8 @@ async function applyEditByFilePath(filePath: string, nearestResourceKey: string,
 	const lineRegex = /([\t ]*?)(["']).*?(,?)(\r?\n)/;// 4 RegExp groups
 	const resourceLineRegex = new RegExp(`(?<=["'])${nearestResourceKey}(?=["']).*\r?(?:\n|$)`);
 	const matchGroups = rawData.match(lineRegex);
-	const isAutoSaveEnabled = vscode.workspace.getConfiguration("akinon-codelens").get("enableResourceAutoSaveInsertOrUpdate", true);
-	const isAutoFocusEnabled = vscode.workspace.getConfiguration("akinon-codelens").get("enableAutoFocusDocumentAfterAltered", false);
+	const isAutoSaveEnabled = vscode.workspace.getConfiguration("i18n-codelens").get("enableResourceAutoSaveInsertOrUpdate", true);
+	const isAutoFocusEnabled = vscode.workspace.getConfiguration("i18n-codelens").get("enableAutoFocusDocumentAfterAltered", false);
 
 	let newLine = `\n  "${resourceKey}": "${resourceData}",`;
 	if (matchGroups?.length == 5) { // 4 groups + 1 for the whole match

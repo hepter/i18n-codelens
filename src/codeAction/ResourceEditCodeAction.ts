@@ -8,14 +8,14 @@ export class ResourceEditCodeAction implements vscode.CodeActionProvider {
 	constructor(context: vscode.ExtensionContext) {
 		this.refreshRegexFromConfig();
 		vscode.workspace.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
+			if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
 				this.refreshRegexFromConfig();
 			}
 		}, null, context.subscriptions);
 	}
 
 	private refreshRegexFromConfig() {
-		const hoverRegex = vscode.workspace.getConfiguration("akinon-codelens").get("languageTranslatorRegex", "");
+		const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
 		this.regex = new RegExp(hoverRegex, "g");
 	}
 
@@ -51,7 +51,7 @@ export class ResourceEditCodeAction implements vscode.CodeActionProvider {
 			const actionAdd = new vscode.CodeAction(titleAdd, vscode.CodeActionKind.Refactor);
 			actionAdd.command = {
 				title: titleAdd,
-				command: "akinon-codelens.codelensActionAddLanguageResource",
+				command: "i18n-codelens.codelensActionAddLanguageResource",
 				tooltip: 'This will open the input-box for every target language.',
 				arguments: [resourceKey]
 			};
@@ -63,7 +63,7 @@ export class ResourceEditCodeAction implements vscode.CodeActionProvider {
 			const actionEdit = new vscode.CodeAction(titleEdit, vscode.CodeActionKind.Refactor);
 			actionEdit.command = {
 				title: titleEdit,
-				command: "akinon-codelens.codeActionEditLanguageResource",
+				command: "i18n-codelens.codeActionEditLanguageResource",
 				tooltip: 'This will open the input-box for every target language.',
 				arguments: [resourceKey]
 			};

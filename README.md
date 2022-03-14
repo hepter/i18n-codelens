@@ -1,14 +1,10 @@
-# Akinon CodeLens
+# i18n CodeLens
 
-Akinon CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.
+i18n CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.
 
 It can be made to work in various projects by changing the regex information and glob pattern.
 
 
-
-
-# Extension link
-VS Code Extension: [Akinon CodeLens](https://marketplace.visualstudio.com/items?itemName=mustafa-kuru.akinon-codelens)
 
 
 ## Demo

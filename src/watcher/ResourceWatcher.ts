@@ -4,7 +4,7 @@ import ActionRefreshLanguageResource from '../actions/ActionRefreshLanguageResou
 
 
 export default function ResourceWatcher() {
-	const resourceGlobPattern = vscode.workspace.getConfiguration("akinon-codelens").get("languageGlobPattern", "**/locales/*.json");
+	const resourceGlobPattern = vscode.workspace.getConfiguration("i18n-codelens").get("languageGlobPattern", "**/locales/*.json");
 
 	const watcher = vscode.workspace.createFileSystemWatcher(resourceGlobPattern, false, false, true);
 

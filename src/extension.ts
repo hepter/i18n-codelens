@@ -29,11 +29,11 @@ export function activate(context: ExtensionContext) {
     disposables.push(languages.registerCodeActionsProvider(['javascript', 'typescript'], codeActionsProvider));
 
 
-    disposables.push(commands.registerCommand("akinon-codelens.enableCodeLens", ActionEnableDisableCodeLens(true)));
-    disposables.push(commands.registerCommand("akinon-codelens.disableCodeLens", ActionEnableDisableCodeLens(false)));
-    disposables.push(commands.registerCommand("akinon-codelens.refreshLanguageResources", ActionRefreshLanguageResource));
-    disposables.push(commands.registerCommand("akinon-codelens.codelensActionAddLanguageResource", ActionAddLanguageResource, ''));
-    disposables.push(commands.registerCommand("akinon-codelens.codeActionEditLanguageResource", ActionEditLanguageResource, ''));
+    disposables.push(commands.registerCommand("i18n-codelens.enableCodeLens", ActionEnableDisableCodeLens(true)));
+    disposables.push(commands.registerCommand("i18n-codelens.disableCodeLens", ActionEnableDisableCodeLens(false)));
+    disposables.push(commands.registerCommand("i18n-codelens.refreshLanguageResources", ActionRefreshLanguageResource));
+    disposables.push(commands.registerCommand("i18n-codelens.codelensActionAddLanguageResource", ActionAddLanguageResource, ''));
+    disposables.push(commands.registerCommand("i18n-codelens.codeActionEditLanguageResource", ActionEditLanguageResource, ''));
 
 
 
@@ -41,7 +41,7 @@ export function activate(context: ExtensionContext) {
 
     new DecoratorProvider(context);
 
-    console.log('Congratulations, extension "akinon-codelens" is now active!');
+    console.log('Congratulations, extension "i18n-codelens" is now active!');
 }
 
 // this method is called when your extension is deactivated

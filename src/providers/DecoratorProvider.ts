@@ -39,7 +39,7 @@ export class DecoratorProvider {
 
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			this._onDidChangeCodeLenses.fire();
-			if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
+			if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
 				this.refreshRegexFromConfig();
 			}
 		}, this.context.subscriptions);
@@ -67,7 +67,7 @@ export class DecoratorProvider {
 			}
 		}, null, this.context.subscriptions);
 
-		const resourceGlobPattern = vscode.workspace.getConfiguration("akinon-codelens").get("languageGlobPattern", "**/locales/*.json");
+		const resourceGlobPattern = vscode.workspace.getConfiguration("i18n-codelens").get("languageGlobPattern", "**/locales/*.json");
 		const watcher = vscode.workspace.createFileSystemWatcher(resourceGlobPattern, false, false, true);
 		watcher.onDidChange((e) => {
 			this.triggerUpdateDecorations(true);
@@ -76,14 +76,14 @@ export class DecoratorProvider {
 	}
 
 	private refreshRegexFromConfig = () => {
-		const hoverRegex = vscode.workspace.getConfiguration("akinon-codelens").get("languageTranslatorRegex", "");
+		const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
 		this.regex = new RegExp(hoverRegex, "g");
 	}
 
 
 	public updateDecorations = async (textEditor?: vscode.TextEditor) => {
 		const activeEditor = textEditor || this.activeEditor;
-		const isDecorationEnabled = vscode.workspace.getConfiguration("akinon-codelens").get("enableUnderlineResourceDecorator", true);
+		const isDecorationEnabled = vscode.workspace.getConfiguration("i18n-codelens").get("enableUnderlineResourceDecorator", true);
 		if (!activeEditor || !isDecorationEnabled) {
 			return;
 		}

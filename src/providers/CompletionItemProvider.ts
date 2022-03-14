@@ -10,13 +10,13 @@ export default class CompletionItemProvider implements vscode.CompletionItemProv
 
 		this.refreshRegexFromConfig();
 		vscode.workspace.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
+			if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
 				this.refreshRegexFromConfig();
 			}
 		}, null, context.subscriptions);
 		this.refreshResourceList();
 
-		const resourceGlobPattern = vscode.workspace.getConfiguration("akinon-codelens").get("languageGlobPattern", "**/locales/*.json");
+		const resourceGlobPattern = vscode.workspace.getConfiguration("i18n-codelens").get("languageGlobPattern", "**/locales/*.json");
 		const watcher = vscode.workspace.createFileSystemWatcher(resourceGlobPattern, false, false, true);
 		watcher.onDidChange((e) => {
 			this.refreshResourceList();
@@ -28,7 +28,7 @@ export default class CompletionItemProvider implements vscode.CompletionItemProv
 		this.resourceList = resources;
 	}
 	private refreshRegexFromConfig() {
-		const hoverRegex = vscode.workspace.getConfiguration("akinon-codelens").get("languageTranslatorRegex", "");
+		const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
 		this.regex = new RegExp(hoverRegex, "g");
 	}
 

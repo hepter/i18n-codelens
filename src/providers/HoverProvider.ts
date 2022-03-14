@@ -10,14 +10,14 @@ export class HoverProvider implements vscode.HoverProvider {
 		this.refreshRegexFromConfig();
 
 		vscode.workspace.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
+			if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
 				this.refreshRegexFromConfig();
 			}
 		}, null, context.subscriptions);
 	}
 
 	private refreshRegexFromConfig() {
-		const hoverRegex = vscode.workspace.getConfiguration("akinon-codelens").get("languageTranslatorRegex", "");
+		const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
 		this.regex = new RegExp(hoverRegex, "g");
 	}
 

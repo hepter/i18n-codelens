@@ -18,19 +18,19 @@ export class CodelensProvider implements vscode.CodeLensProvider {
 
         vscode.workspace.onDidChangeConfiguration((e) => {
             this._onDidChangeCodeLenses.fire();
-            if (e.affectsConfiguration("akinon-codelens.languageTranslatorRegex")) {
+            if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
                 this.refreshRegexFromConfig();
             }
         }, null, context.subscriptions);
     }
 
     private refreshRegexFromConfig() {
-        const hoverRegex = vscode.workspace.getConfiguration("akinon-codelens").get("languageTranslatorRegex", "");
+        const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
         this.regex = new RegExp(hoverRegex, "g");
     }
     public provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] | Thenable<vscode.CodeLens[]> {
 
-        if (vscode.workspace.getConfiguration("akinon-codelens").get("enableCodeLens", true)) {
+        if (vscode.workspace.getConfiguration("i18n-codelens").get("enableCodeLens", true)) {
             return getLanguageResourcesFiles().then((languageResources) => {
 
                 this.codeLenses = [];
@@ -70,11 +70,11 @@ export class CodelensProvider implements vscode.CodeLensProvider {
 
         const codeLensState = this.codeLensKeyWeakMap.get(codeLens);
 
-        if (vscode.workspace.getConfiguration("akinon-codelens").get("enableCodeLens", true)) {
+        if (vscode.workspace.getConfiguration("i18n-codelens").get("enableCodeLens", true)) {
             codeLens.command = {
                 title: `Missing translation key! ('${codeLensState!.languageKey}')`,
                 tooltip: `Add missing language translations key ('${codeLensState!.languageKey}' -> ${codeLensState!.missingTranslationList.join(', ')})`,
-                command: "akinon-codelens.codelensActionAddLanguageResource",
+                command: "i18n-codelens.codelensActionAddLanguageResource",
                 arguments: [codeLensState!.languageKey, codeLensState!.missingTranslationList]
             };
 

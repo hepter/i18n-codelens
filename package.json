@@ -1,7 +1,7 @@
 {
-    "name": "akinon-codelens",
-    "displayName": "Akinon CodeLens",
-    "description": "Akinon CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.",
+    "name": "i18n-codelens",
+    "displayName": "i18n CodeLens",
+    "description": "i18n CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.",
     "version": "1.0.0",
     "publisher": "mustafa-kuru",
     "author": {
@@ -18,7 +18,7 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/hepter/akinon-codelens"
+        "url": "https://github.com/hepter/i18n-codelens"
     },
     "activationEvents": [
         "onLanguage:typescript",
@@ -31,49 +31,49 @@
         "commands": [
             {
                 "title": "Enable CodeLens",
-                "command": "akinon-codelens.enableCodeLens",
-                "category": "Akinon CodeLens"
+                "command": "i18n-codelens.enableCodeLens",
+                "category": "i18n CodeLens"
             },
             {
                 "title": "Disable Codelens",
-                "command": "akinon-codelens.disableCodeLens",
-                "category": "Akinon CodeLens"
+                "command": "i18n-codelens.disableCodeLens",
+                "category": "i18n CodeLens"
             },
             {
                 "title": "Refresh Language Resources",
-                "command": "akinon-codelens.refreshLanguageResources",
-                "category": "Akinon CodeLens"
+                "command": "i18n-codelens.refreshLanguageResources",
+                "category": "i18n CodeLens"
             }
         ],
         "configuration": {
             "properties": {
-                "akinon-codelens.enableCodeLens": {
+                "i18n-codelens.enableCodeLens": {
                     "type": "boolean",
                     "default": true,
                     "description": "Enable or disable the CodeLens for missing resource code."
                 },
-                "akinon-codelens.enableResourceAutoSaveInsertOrUpdate": {
+                "i18n-codelens.enableResourceAutoSaveInsertOrUpdate": {
                     "type": "boolean",
                     "default": true,
                     "description": "Enable auto save for resource file(s) that saves files after inserted or updated resource data."
                 },
-                "akinon-codelens.enableUnderlineResourceDecorator": {
+                "i18n-codelens.enableUnderlineResourceDecorator": {
                     "type": "boolean",
                     "default": true,
                     "description": "Enable or disable the underline decorator for missing resource code(s)."
                 },
-                "akinon-codelens.enableAutoFocusDocumentAfterAltered": {
+                "i18n-codelens.enableAutoFocusDocumentAfterAltered": {
                     "type": "boolean",
                     "default": false,
                     "description": "Enable auto focus document after inserted or updated target resource file(s)."
                 },
-                "akinon-codelens.languageGlobPattern": {
+                "i18n-codelens.languageGlobPattern": {
                     "type": "string",
                     "description": "Language file glob patterns. (Language resource files must be key value object files.)",
                     "editPresentation": "singlelineText",
                     "default": "**/locales/*.json"
                 },
-                "akinon-codelens.languageTranslatorRegex": {
+                "i18n-codelens.languageTranslatorRegex": {
                     "type": "string",
                     "description": "Regex to detect hover or codeLenses for Language",
                     "editPresentation": "singlelineText",
