@@ -5,8 +5,6 @@ export class DecoratorProvider {
 
 	private regex!: RegExp;
 	private context!: vscode.ExtensionContext;
-	private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
-	public readonly onDidChangeCodeLenses: vscode.Event<void> = this._onDidChangeCodeLenses.event;
 	private timeout: NodeJS.Timer | undefined = undefined;
 	private activeEditor = vscode.window.activeTextEditor;
 	private resourceExistDecorationType = vscode.window.createTextEditorDecorationType({
@@ -38,7 +36,6 @@ export class DecoratorProvider {
 		this.refreshRegexFromConfig();
 
 		vscode.workspace.onDidChangeConfiguration((e) => {
-			this._onDidChangeCodeLenses.fire();
 			if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
 				this.refreshRegexFromConfig();
 			}

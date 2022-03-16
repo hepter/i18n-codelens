@@ -1,5 +1,5 @@
 
-import { commands, Disposable, ExtensionContext, languages, window } from 'vscode';
+import { commands, Disposable, ExtensionContext, languages } from 'vscode';
 import ActionAddLanguageResource from './actions/ActionAddLanguageResource';
 import ActionEditLanguageResource from './actions/ActionEditLanguageResource';
 import ActionEnableDisableCodeLens from './actions/ActionEnableDisableCodeLens';
@@ -8,8 +8,10 @@ import { ResourceEditCodeAction } from './codeAction/ResourceEditCodeAction';
 import { CodelensProvider } from './providers/CodelensProvider';
 import CompletionItemProvider from './providers/CompletionItemProvider';
 import { DecoratorProvider } from './providers/DecoratorProvider';
+import { DecoratorProviderUnusedResources } from './providers/DecoratorProviderUnusedResources';
 import DefinitionProvider from './providers/DefinitionProvider';
 import { HoverProvider } from './providers/HoverProvider';
+import { HoverProviderUnusedResources } from './providers/HoverProviderUnusedResources';
 import ResourceWatcher from './watcher/ResourceWatcher';
 
 let disposables: Disposable[] = [];
@@ -19,6 +21,7 @@ export function activate(context: ExtensionContext) {
 
     const codelensProvider = new CodelensProvider(context);
     const hoverProvider = new HoverProvider(context);
+    const hoverProviderUnusedResources = new HoverProviderUnusedResources(context);
     const completionItemProvider = new CompletionItemProvider(context);
     const codeActionsProvider = new ResourceEditCodeAction(context);
     const definitionProvider = new DefinitionProvider(context);
@@ -27,6 +30,7 @@ export function activate(context: ExtensionContext) {
 
     disposables.push(languages.registerCodeLensProvider(['javascript', 'typescript'], codelensProvider));
     disposables.push(languages.registerHoverProvider(['javascript', 'typescript'], hoverProvider));
+    disposables.push(languages.registerHoverProvider(['json'], hoverProviderUnusedResources));
     disposables.push(languages.registerCompletionItemProvider(['javascript', 'typescript'], completionItemProvider, ''));
     disposables.push(languages.registerCodeActionsProvider(['javascript', 'typescript'], codeActionsProvider));
     disposables.push(languages.registerDefinitionProvider(['javascript', 'typescript', 'json'], definitionProvider));
@@ -43,6 +47,7 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(...disposables);
 
     new DecoratorProvider(context);
+    new DecoratorProviderUnusedResources(context);
 
     console.log('Congratulations, extension "i18n-codelens" is now active!');
 }
