@@ -1,5 +1,5 @@
 
-import { commands, Disposable, ExtensionContext, languages } from 'vscode';
+import { commands, Disposable, ExtensionContext, languages, window } from 'vscode';
 import ActionAddLanguageResource from './actions/ActionAddLanguageResource';
 import ActionEditLanguageResource from './actions/ActionEditLanguageResource';
 import ActionEnableDisableCodeLens from './actions/ActionEnableDisableCodeLens';
@@ -8,6 +8,7 @@ import { ResourceEditCodeAction } from './codeAction/ResourceEditCodeAction';
 import { CodelensProvider } from './providers/CodelensProvider';
 import CompletionItemProvider from './providers/CompletionItemProvider';
 import { DecoratorProvider } from './providers/DecoratorProvider';
+import DefinitionProvider from './providers/DefinitionProvider';
 import { HoverProvider } from './providers/HoverProvider';
 import ResourceWatcher from './watcher/ResourceWatcher';
 
@@ -20,6 +21,7 @@ export function activate(context: ExtensionContext) {
     const hoverProvider = new HoverProvider(context);
     const completionItemProvider = new CompletionItemProvider(context);
     const codeActionsProvider = new ResourceEditCodeAction(context);
+    const definitionProvider = new DefinitionProvider(context);
 
     disposables.push(ResourceWatcher());
 
@@ -27,6 +29,7 @@ export function activate(context: ExtensionContext) {
     disposables.push(languages.registerHoverProvider(['javascript', 'typescript'], hoverProvider));
     disposables.push(languages.registerCompletionItemProvider(['javascript', 'typescript'], completionItemProvider, ''));
     disposables.push(languages.registerCodeActionsProvider(['javascript', 'typescript'], codeActionsProvider));
+    disposables.push(languages.registerDefinitionProvider(['javascript', 'typescript', 'json'], definitionProvider));
 
 
     disposables.push(commands.registerCommand("i18n-codelens.enableCodeLens", ActionEnableDisableCodeLens(true)));
