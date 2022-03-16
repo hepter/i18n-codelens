@@ -3,24 +3,35 @@ import { getLanguageResourcesFiles, LanguageResource } from '../Utils';
 
 
 export const definitionProviderCache = new Map<string, vscode.Location[]>();
+
 export default class DefinitionProvider implements vscode.DefinitionProvider {
-	context: vscode.ExtensionContext
-	regex!: RegExp;
-	resourceList: LanguageResource = [];
-	resourceLineRegex = /(?<=["'])(?<key>[\w\d\-_.]+?)(?=["'])/;
+	private context: vscode.ExtensionContext
+	private regex!: RegExp;
+	private resourceList: LanguageResource = [];
+	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\-_.]+?)(?=["'])/;
+	private static _onDidChangeDefinitionProvider: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
+
+	private initialLoadDone = false;
+	public static readonly onDidChangeDefinitionProvider: vscode.Event<void> = DefinitionProvider._onDidChangeDefinitionProvider.event;
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
 		this.refreshRegexFromConfig();
 		this.init();
+
 	}
 
 	private removeLocationsFromCacheByCodeUri(uri: vscode.Uri) {
+		let isRemovedKey = false;
 		for (const [key, value] of definitionProviderCache) {
 			const newValue = value.filter(v => v.uri.fsPath !== uri.fsPath);
 			if (newValue.length != value.length) {
 				definitionProviderCache.set(key, newValue);
+				isRemovedKey = true;
 			}
+		}
+		if (isRemovedKey && this.initialLoadDone) {
+			DefinitionProvider._onDidChangeDefinitionProvider.fire();
 		}
 	}
 
@@ -31,6 +42,10 @@ export default class DefinitionProvider implements vscode.DefinitionProvider {
 		await this.findAllResourceReferencesFromCodeFiles();
 		await this.listenAllResourceFiles();
 		await this.listenAllWorkspaceCodeFiles();
+
+		this.initialLoadDone = true;
+		console.log("Definition Provider Loaded");
+		DefinitionProvider._onDidChangeDefinitionProvider.fire();
 	}
 
 	private async listenConfigChanges() {
@@ -91,6 +106,7 @@ export default class DefinitionProvider implements vscode.DefinitionProvider {
 
 		let lineNumber = 0;
 		const lines = fileContent.split("\n");
+		let isAddedNewKey = false;
 		for (const line of lines) {
 			this.regex.lastIndex = 0;
 			const match = this.regex.exec(line);
@@ -102,8 +118,12 @@ export default class DefinitionProvider implements vscode.DefinitionProvider {
 				const locationList = definitionProviderCache.get(key) || [];
 				locationList.push(location);
 				definitionProviderCache.set(key, locationList);
+				isAddedNewKey = true;
 			}
 			lineNumber++;
+		}
+		if (isAddedNewKey && this.initialLoadDone) {
+			DefinitionProvider._onDidChangeDefinitionProvider.fire();
 		}
 	}
 
@@ -113,6 +133,7 @@ export default class DefinitionProvider implements vscode.DefinitionProvider {
 
 		let lineNumber = 0;
 		const lines = fileContent.split("\n");
+		let isAddedNewKey = false;
 		for (const line of lines) {
 
 			const match = this.resourceLineRegex.exec(line);
@@ -123,9 +144,13 @@ export default class DefinitionProvider implements vscode.DefinitionProvider {
 				const locationList = definitionProviderCache.get(match.groups.key) || [];
 				locationList.push(location);
 				definitionProviderCache.set(match.groups.key, locationList);
+				isAddedNewKey = true;
 			}
 			this.resourceLineRegex.lastIndex = 0;
 			lineNumber++;
+		}
+		if (isAddedNewKey && this.initialLoadDone) {
+			DefinitionProvider._onDidChangeDefinitionProvider.fire();
 		}
 	}
 
