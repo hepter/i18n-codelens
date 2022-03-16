@@ -20,7 +20,8 @@ export class HoverProviderUnusedResources implements vscode.HoverProvider {
 			if (!locationsExceptJson?.length) {
 				const hoverText: vscode.MarkdownString = new vscode.MarkdownString();
 				hoverText.appendMarkdown(`The **'${key}'** resource key has no reference in any file. \n\n`);
-				hoverText.appendMarkdown(`Delete the resource key if you don't need it`);
+				hoverText.appendMarkdown(`Delete the resource key if you don't need it\n\n\n`);
+				hoverText.appendMarkdown(`- Note: It may still be used as dynamically, so please try to check before deleting`);
 				return new vscode.Hover(hoverText);
 			}
 		}
