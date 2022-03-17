@@ -1,15 +1,17 @@
 # i18n CodeLens
 
-i18n CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.
+i18n CodeLens, makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.
 
 It can be made to work in various projects by changing the regex information and glob pattern.
 
 ## Change Log
 
+##### v1.0.2
+- Fix: Missing glob validation added to shows properly.
 ##### v1.0.1
 
 - Definition Provider added so that the language resource references can be found with 'go to definition' command or ctrl + click.
-- Unused resources now show as half-transparent and give hover information on `.json` language resource files
+- Unused resources now show as half-transparent and give hover information on `.json` language resource files.
 
 ##### v1.0.0
 

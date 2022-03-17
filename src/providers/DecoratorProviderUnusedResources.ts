@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import DefinitionProvider, { definitionProviderCache } from './DefinitionProvider';
 
+import { IMinimatch, Minimatch } from 'minimatch';
 export class DecoratorProviderUnusedResources {
 
+	private mm!: IMinimatch;
 	private context!: vscode.ExtensionContext;
-
 	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\-_.]+?)(?=["'])/;
 	private timeout: NodeJS.Timer | undefined = undefined;
 	private activeEditor = vscode.window.activeTextEditor;
@@ -15,6 +16,7 @@ export class DecoratorProviderUnusedResources {
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
+		this.listenConfigChanges();
 		this.initialize();
 
 		DefinitionProvider.onDidChangeDefinitionProvider((e) => {
@@ -51,12 +53,26 @@ export class DecoratorProviderUnusedResources {
 
 	}
 
+	private async listenConfigChanges() {
+		vscode.workspace.onDidChangeConfiguration((e) => {
+			if (e.affectsConfiguration("i18n-codelens.languageGlobPattern")) {
+				this.refreshGlobFromConfig();
+			}
+		}, null, this.context.subscriptions);
+		this.refreshGlobFromConfig();
+	}
+	private async refreshGlobFromConfig() {
+		const globPattern = vscode.workspace.getConfiguration("i18n-codelens").get("languageGlobPattern", "**/locales/*.json");
+		this.mm = new Minimatch(globPattern);
+	}
+
+
 
 	public updateDecorations = async (textEditor?: vscode.TextEditor) => {
 		const activeEditor = textEditor || this.activeEditor;
 
 		const text = activeEditor?.document.getText();
-		if (text && activeEditor?.document?.uri && activeEditor.document.uri.fsPath.endsWith(".json")) {
+		if (text && activeEditor && this.mm.match(activeEditor.document?.uri?.path || "")) {
 
 			const lines = text.split(/\r?\n/g);
 			let lineNumber = 0;

@@ -87,17 +87,12 @@ export default class DefinitionProvider implements vscode.DefinitionProvider {
 	}
 
 	private async findAllResourceReferencesFromJson() {
-		for (const res of this.resourceList) {
-			this.updateLocationsFromResourceFile(vscode.Uri.file(res.path));
-		}
+		await Promise.all([...this.resourceList.map(res => this.updateLocationsFromResourceFile(vscode.Uri.file(res.path)))]);
 	}
 
 	private async findAllResourceReferencesFromCodeFiles() {
 		const files = await vscode.workspace.findFiles("**/*.{ts,tsx,js,jsx}", "**/node_modules/**");
-
-		for (const fileUri of files) {
-			this.updateLocationsFromCacheByCodeUri(fileUri);
-		}
+		await Promise.all([...files.map(fileUri => this.updateLocationsFromCacheByCodeUri(fileUri))]);
 	}
 
 	private async updateLocationsFromCacheByCodeUri(fileUri: vscode.Uri) {
