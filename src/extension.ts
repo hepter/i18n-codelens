@@ -15,6 +15,7 @@ import DefinitionProvider from './providers/DefinitionProvider';
 import { HoverProvider } from './providers/HoverProvider';
 import { ResourceTreeView } from './providers/ResourceTreeViewProvider';
 import SettingUtils from './SettingUtils';
+import { Logger } from './Utils';
 
 let disposables: vscode.Disposable[] = [];
 
@@ -23,7 +24,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 
     const settingUtil = SettingUtils.getInstance();
-   
+
     SettingUtils.onDidLoad((instanceDisposables) => {
         const id = instanceDisposables;
         id.push(new DecoratorProvider());
@@ -48,7 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     disposables.push(settingUtil);
     context.subscriptions.push(...disposables);
-    console.log(`Congratulations, ${extensionName} is now active!`);
+    Logger.log(`Congratulations, ${extensionName} is now active!`);
 }
 
 export function deactivate() {

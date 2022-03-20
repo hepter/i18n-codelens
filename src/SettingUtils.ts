@@ -1,8 +1,9 @@
-import * as vscode from 'vscode';
-import { IMinimatch, Minimatch } from 'minimatch';
-import { extensionName, settings } from './constants';
 import { debounce } from 'lodash';
-import * as  path from 'path';
+import { IMinimatch, Minimatch } from 'minimatch';
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { extensionName, settings } from './constants';
+import { Logger } from './Utils';
 
 const excludePattern = "**/node_modules/**";
 
@@ -51,7 +52,7 @@ export default class SettingUtils implements vscode.Disposable {
 	}
 
 	public async initialize() {
-		console.log("i18n CodeLens initializing...");
+		Logger.log("i18n CodeLens initializing...");
 		this.initialLoadDone = false;
 
 		this.readAndListenConfigs();
@@ -59,7 +60,7 @@ export default class SettingUtils implements vscode.Disposable {
 
 		this.initialLoadDone = true;
 
-		console.log("i18n CodeLens initialize finished!");
+		Logger.log("i18n CodeLens initialize finished!");
 		SettingUtils._onDidLoad.fire(SettingUtils.disposables);
 	}
 
@@ -68,14 +69,20 @@ export default class SettingUtils implements vscode.Disposable {
 		this.refreshRegexFromConfig();
 
 		vscode.workspace.onDidChangeConfiguration(async (e) => {
+			let isChanged = false;
 			if (e.affectsConfiguration(settings.globPattern)) {
 				this.refreshGlobFromConfig();
 				this.refreshResourceFromFiles(true);
 				this.findAllResourceReferencesFromJson();
+				isChanged = true;
 			} else if (e.affectsConfiguration(settings.resourceRegex)) {
 				this.refreshRegexFromConfig();
 				this.findAllResourceReferencesFromCodeFiles();
+				isChanged = true;
 			}
+			
+			if (isChanged) Logger.log(`i18n CodeLens config changes were applied!`);
+
 		}, null, SettingUtils.disposables);
 	}
 
@@ -130,7 +137,7 @@ export default class SettingUtils implements vscode.Disposable {
 				SettingUtils.fireDebouncedOnDidChangeResource(this.languageResourcesFilesCache);
 			}
 		} catch (error) {
-			console.log("Resource file parse error: " + filePath.name, error);
+			Logger.log("Resource file parse error: " + filePath.name, error);
 		}
 	}
 
@@ -149,7 +156,7 @@ export default class SettingUtils implements vscode.Disposable {
 		const watcher = vscode.workspace.createFileSystemWatcher(this.globPattern);
 		const watcherHandler = (type: "change" | "create" | "delete") => (e: vscode.Uri) => {
 			const file = path.parse(e.fsPath);
-			console.log(`Resource file '${file.name}' was changed!`);
+			Logger.log(`Resource file '${file.name}' was affected by '${type}' event!`);
 			this.insertOrUpdateResourceByUri(e, type === "delete");
 			if (type === "delete") {
 				this.removeLocationsByUri(e);
@@ -174,7 +181,6 @@ export default class SettingUtils implements vscode.Disposable {
 		const watcher = vscode.workspace.createFileSystemWatcher("**/*.{ts,tsx,js,jsx}");
 		const watcherHandler = (type: string) => async (e: vscode.Uri) => {
 			if (/^(.(?!.*node_modules))*\.(jsx?|tsx?)$/.test(e.fsPath)) {
-
 				if (type === "delete") {
 					this.removeLocationsByUri(e);
 				}

@@ -1,5 +1,5 @@
-import * as vscode from "vscode";
 import { closest } from 'fastest-levenshtein';
+import * as vscode from "vscode";
 import SettingUtils from './SettingUtils';
 
 async function applyEditByFileUri(fileUri: vscode.Uri, nearestResourceKey: string, resourceKey: string, resourceData: string, isUpdate?: boolean): Promise<void> {
@@ -118,8 +118,10 @@ export async function addNewOrUpdateLanguageTranslation(resourceKey: string, mod
 			}
 			try {
 				await applyEditByFileUri(resource.uri, closestResourceKey, resourceKey, matchedTranslation, isUpdate);
+				const languageKeys = Object.keys(modifiedTranslationsData);
+				Logger.log(`${isUpdate ? "Updated" : "Added new"}  translation(s) for key '${resourceKey}' in ${languageKeys.length} languages: ${languageKeys.join(", ")}`);
 			} catch (error) {
-				console.log(error);
+				Logger.log(error);
 			}
 		}
 	}
@@ -155,3 +157,26 @@ export const normalizeString = (str: string) => {
 	replacedString = replacedString.replace(/[^A-Za-z0-9\\[\] -_]/g, '');
 	return replacedString;
 };
+
+const log = vscode.window.createOutputChannel("i18n CodeLens");
+export class Logger {
+	public static log(message: any, ...args: any[]) {
+
+
+		const date = new Date();
+		const time = date.toLocaleTimeString();
+		const timeMilliseconds = date.getMilliseconds().toString().padStart(3, '0');
+		const timeLog = `[${time}.${timeMilliseconds}]`;
+
+		let msg = message + "";
+		if (args?.length) {
+			msg = msg.replace(/{(\d+)}/g, function (match, number) {
+				return typeof args[number] !== 'undefined' ? args[number] : match;
+			});
+		}
+
+		msg = `${timeLog} ${msg}`;
+		log.appendLine(msg);
+		console.log(message, ...args);
+	}
+}

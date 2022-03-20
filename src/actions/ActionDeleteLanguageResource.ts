@@ -1,6 +1,7 @@
 
 import * as vscode from 'vscode';
 import SettingUtils from '../SettingUtils';
+import { Logger } from '../Utils';
 
 export default async function ActionDeleteLanguageResource(key: string) {
 	const resources = SettingUtils.getResources();
@@ -44,6 +45,7 @@ export default async function ActionDeleteLanguageResource(key: string) {
 		}
 
 		await vscode.workspace.applyEdit(workspaceEdit);
+		Logger.log(`deleted translation(s) for key '${key}'`);
 		dispose?.dispose();
 	}
 
