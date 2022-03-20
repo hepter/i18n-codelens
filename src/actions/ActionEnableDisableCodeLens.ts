@@ -1,6 +1,9 @@
 
 import { workspace } from 'vscode';
+import { extensionName, settings } from '../constants';
 
-export default (actionStatus: boolean) => () => {
-	workspace.getConfiguration("i18n-codelens").update("enableCodeLens", actionStatus, true);
-};
+export default function ActionEnableDisableCodeLens(actionStatus: boolean) {
+	return () => {
+		workspace.getConfiguration(extensionName).update(settings.codeLens, actionStatus, true);
+	};
+}

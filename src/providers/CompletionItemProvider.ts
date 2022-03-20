@@ -1,47 +1,26 @@
 
 import * as vscode from 'vscode';
-import { getLanguageResourcesFiles, LanguageResource, normalizeString } from '../Utils';
+import SettingUtils from '../SettingUtils';
+import { normalizeString } from '../Utils';
 
 export default class CompletionItemProvider implements vscode.CompletionItemProvider {
 
-	private regex!: RegExp;
-	private resourceList: LanguageResource = [];
-	constructor(context: vscode.ExtensionContext) {
-
-		this.refreshRegexFromConfig();
-		vscode.workspace.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
-				this.refreshRegexFromConfig();
-			}
-		}, null, context.subscriptions);
-		this.refreshResourceList();
-
-		const resourceGlobPattern = vscode.workspace.getConfiguration("i18n-codelens").get("languageGlobPattern", "**/locales/*.json");
-		const watcher = vscode.workspace.createFileSystemWatcher(resourceGlobPattern, false, false, true);
-		watcher.onDidChange((e) => {
-			this.refreshResourceList();
-		}, null, context.subscriptions);
-
-	}
-	private async refreshResourceList() {
-		const resources = await getLanguageResourcesFiles();
-		this.resourceList = resources;
-	}
-	private refreshRegexFromConfig() {
-		const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
-		this.regex = new RegExp(hoverRegex, "g");
-	}
 
 	provideCompletionItems(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext) {
 
-		const range = document.getWordRangeAtPosition(position, new RegExp(this.regex));
+
+		const resources = SettingUtils.getResources();
+		const resourceRegex = SettingUtils.getResourceCodeRegex();
+
+		const range = document.getWordRangeAtPosition(position, resourceRegex);
 		const translationKeyMatch = document.getText(range);
 		if (!translationKeyMatch) {
 			return undefined;
 		}
 
 		const resourceList: { key: string, value: { [key: string]: string } }[] = [];
-		this.resourceList.forEach(resource => {
+
+		for (const resource of resources) {
 			Object.entries(resource.keyValuePairs).forEach(([key, value]) => {
 				const matchedResource = resourceList.find(item => item.key === key);
 				if (matchedResource) {
@@ -50,8 +29,7 @@ export default class CompletionItemProvider implements vscode.CompletionItemProv
 					resourceList.push({ key, value: { [resource.fileName]: value } });
 				}
 			});
-
-		});
+		}
 
 		const codeCompletionList: vscode.CompletionItem[] = [];
 		for (const resource of resourceList) {
@@ -80,7 +58,4 @@ export default class CompletionItemProvider implements vscode.CompletionItemProv
 		}
 		return codeCompletionList;
 	}
-
-
-
 }

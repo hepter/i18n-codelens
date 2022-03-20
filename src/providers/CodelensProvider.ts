@@ -1,83 +1,76 @@
 import * as vscode from 'vscode';
-import { getLanguageResourcesFiles } from '../Utils';
+import { actions } from '../constants';
+import SettingUtils from '../SettingUtils';
 /**
  * CodelensProvider
  */
 export class CodelensProvider implements vscode.CodeLensProvider {
 
     private codeLenses: vscode.CodeLens[] = [];
-    private regex!: RegExp;
-    private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
-    public readonly onDidChangeCodeLenses: vscode.Event<void> = this._onDidChangeCodeLenses.event;
     private codeLensKeyWeakMap = new WeakMap<vscode.CodeLens, {
         languageKey: string,
         missingTranslationList: string[]
     }>();
-    constructor(context: vscode.ExtensionContext) {
-        this.refreshRegexFromConfig();
+    private static _onDidChangeCodeLenses = new vscode.EventEmitter<vscode.Disposable[]>();
 
-        vscode.workspace.onDidChangeConfiguration((e) => {
-            this._onDidChangeCodeLenses.fire();
-            if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
-                this.refreshRegexFromConfig();
+    public static readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
+
+
+    constructor(disposables: vscode.Disposable[]) {
+        SettingUtils.onDidChangeResourceLocations(() => {
+            CodelensProvider._onDidChangeCodeLenses.fire();
+        }, null, disposables);
+    }
+
+    public provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] {
+
+        if (!SettingUtils.isEnabledCodeLens()) return [];
+
+        const resources = SettingUtils.getResources();
+        const resourceRegex = SettingUtils.getResourceCodeRegex();
+
+        this.codeLenses = [];
+        const text = document.getText();
+
+        let matches;
+        while ((matches = resourceRegex.exec(text)) !== null) {
+
+
+            const line = document.lineAt(document.positionAt(matches.index).line);
+            const indexOf = line.text.indexOf(matches[0]);
+            const position = new vscode.Position(line.lineNumber, indexOf);
+            const range = document.getWordRangeAtPosition(position, new RegExp(resourceRegex));
+            const missingTranslationList: string[] = [];
+            const languageKey = matches[0];
+
+            if (languageKey) {
+                resources.forEach((item) => {
+                    if (!item.keyValuePairs[languageKey]) {
+                        missingTranslationList.push(item.fileName);
+                    }
+                });
+
             }
-        }, null, context.subscriptions);
-    }
 
-    private refreshRegexFromConfig() {
-        const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
-        this.regex = new RegExp(hoverRegex, "g");
-    }
-    public provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] | Thenable<vscode.CodeLens[]> {
-
-        if (vscode.workspace.getConfiguration("i18n-codelens").get("enableCodeLens", true)) {
-            return getLanguageResourcesFiles().then((languageResources) => {
-
-                this.codeLenses = [];
-                const regex = new RegExp(this.regex);
-                const text = document.getText();
-                let matches;
-
-                while ((matches = regex.exec(text)) !== null) {
-                    const line = document.lineAt(document.positionAt(matches.index).line);
-                    const indexOf = line.text.indexOf(matches[0]);
-                    const position = new vscode.Position(line.lineNumber, indexOf);
-                    const range = document.getWordRangeAtPosition(position, new RegExp(this.regex));
-                    const missingTranslationList: string[] = [];
-                    const languageKey = matches[0];
-
-                    if (languageKey) {
-                        languageResources.forEach((item) => {
-                            if (!item.keyValuePairs[languageKey]) {
-                                missingTranslationList.push(item.fileName);
-                            }
-                        });
-
-                    }
-
-                    if (range && missingTranslationList.length) {
-                        this.codeLenses.push(new vscode.CodeLens(range));
-                        this.codeLensKeyWeakMap.set(this.codeLenses[this.codeLenses.length - 1], { languageKey, missingTranslationList });
-                    }
-                }
-                return this.codeLenses;
-            });
+            if (range && missingTranslationList.length) {
+                this.codeLenses.push(new vscode.CodeLens(range));
+                this.codeLensKeyWeakMap.set(this.codeLenses[this.codeLenses.length - 1], { languageKey, missingTranslationList });
+            }
         }
-        return [];
+        return this.codeLenses;
     }
 
     public resolveCodeLens(codeLens: vscode.CodeLens, token: vscode.CancellationToken) {
 
         const codeLensState = this.codeLensKeyWeakMap.get(codeLens);
 
-        if (vscode.workspace.getConfiguration("i18n-codelens").get("enableCodeLens", true)) {
+        if (SettingUtils.isEnabledCodeLens()) {
             codeLens.command = {
-                title: `Missing translation key! ('${codeLensState!.languageKey}')`,
-                tooltip: `Add missing language translations key ('${codeLensState!.languageKey}' -> ${codeLensState!.missingTranslationList.join(', ')})`,
-                command: "i18n-codelens.codelensActionAddLanguageResource",
+                title: `Missing Resource Key ('${codeLensState!.missingTranslationList.join(', ')}')`,
+                tooltip: `Click to add missing language translations key ('${codeLensState!.languageKey}' -> ${codeLensState!.missingTranslationList.join(', ')})`,
+                command: actions.addResource,
                 arguments: [codeLensState!.languageKey, codeLensState!.missingTranslationList]
             };
-
             return codeLens;
         }
         return null;

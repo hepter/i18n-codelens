@@ -1,49 +1,46 @@
 import * as vscode from 'vscode';
-import { getLanguageResourcesFiles } from '../Utils';
+import SettingUtils from '../SettingUtils';
 
 export class HoverProvider implements vscode.HoverProvider {
+	provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken) {
 
-	private regex!: RegExp;
+		const line = document.lineAt(position.line);
+		const key = SettingUtils.getResourceLineMatch(line.text)?.groups?.key;
+		if (!key) return;
 
-	constructor(context: vscode.ExtensionContext) {
-
-		this.refreshRegexFromConfig();
-
-		vscode.workspace.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration("i18n-codelens.languageTranslatorRegex")) {
-				this.refreshRegexFromConfig();
-			}
-		}, null, context.subscriptions);
+		if (SettingUtils.isResourceFilePath(document.uri.path)) {
+			return this.hoverForResource(key);
+		} else if (SettingUtils.isCodeFilePath(document.uri.path)) {
+			return this.hoverForCode(key);
+		}
 	}
 
-	private refreshRegexFromConfig() {
-		const hoverRegex = vscode.workspace.getConfiguration("i18n-codelens").get("languageTranslatorRegex", "");
-		this.regex = new RegExp(hoverRegex, "g");
+	private hoverForResource(key: string) {
+		const locations = SettingUtils.getResourceLocationsByKey(key);
+		const codeLocations = locations?.filter(location => SettingUtils.isCodeFilePath(location.uri.fsPath));
+		if (!codeLocations?.length) {
+			const hoverText = new vscode.MarkdownString();
+			hoverText.appendMarkdown(`The **'${key}'** resource key has no reference in any file. \n\n`);
+			hoverText.appendMarkdown(`Delete the resource key if you don't need it\n\n\n`);
+			hoverText.appendMarkdown(`- Note: It may still be used as dynamically, so please try to check before deleting`);
+			return new vscode.Hover(hoverText);
+		}
 	}
 
-	async provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken) {
-
-		const resourceList = await getLanguageResourcesFiles();
+	private hoverForCode(key: string) {
+		const resources = SettingUtils.getResources();
 		let hasMatch = false;
 		const hoverText: vscode.MarkdownString = new vscode.MarkdownString();
-		const range = document.getWordRangeAtPosition(position, new RegExp(this.regex)); ///(?<=['"])[\w-_.]+(?=['"])/);
-		const resourceKey = document.getText(range);
 
-		if (!range || !resourceKey) {
-			return;
-		}
-
-		resourceList.forEach((item) => {
-
-			if (item.keyValuePairs[resourceKey]) {
+		for (const resource of resources) {
+			if (resource.keyValuePairs[key]) {
 				if (!hasMatch) {
-					hoverText.appendMarkdown(`**KEY**: ${resourceKey}  \n\n\n`);
+					hoverText.appendMarkdown(`**KEY**: ${key}  \n\n\n`);
 				}
-				hoverText.appendMarkdown(`- **${item.fileName}**: ${item.keyValuePairs[resourceKey]}  \n\n`);
+				hoverText.appendMarkdown(`- **${resource.fileName}**: ${resource.keyValuePairs[key]}  \n\n`);
 				hasMatch = true;
 			}
-
-		});
+		}
 
 		if (!hasMatch) {
 			hoverText.appendMarkdown("**Language definition not found!**");

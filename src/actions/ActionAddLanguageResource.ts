@@ -1,12 +1,9 @@
 
 import { window } from 'vscode';
-import {
-	addNewOrUpdateLanguageTranslation,
-	capitalizeFirstLetter,
-	getLanguageResourcesFiles
-} from '../Utils';
+import SettingUtils from '../SettingUtils';
+import { addNewOrUpdateLanguageTranslation, capitalizeFirstLetter, } from '../Utils';
 
-export default async (key: string, missingTranslationList: string[] = []) => {
+export default async function ActionAddLanguageResource(key: string, missingTranslationList: string[] = []) {
 
 
 	let counter = 1;
@@ -14,7 +11,7 @@ export default async (key: string, missingTranslationList: string[] = []) => {
 	const languageFileNames = missingTranslationList;
 
 	if (languageFileNames.length === 0) {
-		const resources = await getLanguageResourcesFiles();
+		const resources = SettingUtils.getResources();
 		for (const resource of resources) {
 			if (!resource.keyValuePairs[key]) {
 				languageFileNames.push(resource.fileName);
@@ -44,4 +41,4 @@ export default async (key: string, missingTranslationList: string[] = []) => {
 	}
 
 
-};
+}

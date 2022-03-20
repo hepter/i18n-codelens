@@ -2,7 +2,7 @@
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
     "description": "i18n CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -24,60 +24,80 @@
         "onLanguage:typescript",
         "onLanguage:typescriptreact",
         "onLanguage:javascript",
-        "onLanguage:javascriptreact"
+        "onLanguage:javascriptreact",
+        "onLanguage:json"
     ],
     "main": "./out/extension",
     "contributes": {
+        "views": {
+            "explorer": [
+                {
+                    "id": "i18nResourceDefinitions",
+                    "name": "i18n Resource Definitions",
+                    "when": "config.i18n-codelens.resourceTreeViewVisible && resourceLangId in i18TreeView.supportedLanguages"
+                }
+            ]
+        },
         "commands": [
             {
                 "title": "Enable CodeLens",
-                "command": "i18n-codelens.enableCodeLens",
+                "command": "i18n-codelens.enableCodeLensAction",
                 "category": "i18n CodeLens"
             },
             {
                 "title": "Disable Codelens",
-                "command": "i18n-codelens.disableCodeLens",
+                "command": "i18n-codelens.disableCodeLensAction",
                 "category": "i18n CodeLens"
             },
             {
-                "title": "Refresh Language Resources",
-                "command": "i18n-codelens.refreshLanguageResources",
+                "title": "Reset cache and reload",
+                "command": "i18n-codelens.resetAndReloadExtensionAction",
                 "category": "i18n CodeLens"
             }
         ],
         "configuration": {
             "properties": {
-                "i18n-codelens.enableCodeLens": {
+                "i18n-codelens.codeLens": {
                     "type": "boolean",
                     "default": true,
                     "description": "Enable or disable the CodeLens for missing resource code."
                 },
-                "i18n-codelens.enableResourceAutoSaveInsertOrUpdate": {
+                "i18n-codelens.resourceAutoSave": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable auto save for resource file(s) that saves files after inserted or updated resource data."
+                    "description": "Enable auto save for resource file(s) that saves files after inserted or updated resource data."                    
                 },
-                "i18n-codelens.enableUnderlineResourceDecorator": {
+                "i18n-codelens.underlineCodeDecorator": {
                     "type": "boolean",
                     "default": true,
                     "description": "Enable or disable the underline decorator for missing resource code(s)."
                 },
-                "i18n-codelens.enableAutoFocusDocumentAfterAltered": {
+                "i18n-codelens.autoFocusAfterModified": {
                     "type": "boolean",
                     "default": false,
                     "description": "Enable auto focus document after inserted or updated target resource file(s)."
                 },
-                "i18n-codelens.languageGlobPattern": {
+                "i18n-codelens.revealResourceInTreeView": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable or disable the automatic reveal resource item in the Resource Tree View when selected resource file on the editor."
+                },
+                "i18n-codelens.resourceTreeViewVisible": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable or disable the Resource Tree View"
+                },
+                "i18n-codelens.resourceFilesGlobPattern": {
                     "type": "string",
                     "description": "Language file glob patterns. (Language resource files must be key value object files.)",
                     "editPresentation": "singlelineText",
                     "default": "**/locales/*.json"
                 },
-                "i18n-codelens.languageTranslatorRegex": {
+                "i18n-codelens.resourceCodeDetectionRegex": {
                     "type": "string",
-                    "description": "Regex to detect hover or codeLenses for Language",
+                    "description": "Regex to detect hover or codeLenses for resource key.",
                     "editPresentation": "singlelineText",
-                    "default": "(?<=T\\(['\"])[a-zA-Z0-9.-]+?(?=['\"]\\))"
+                    "default": "(?<=T\\(['\"])(?<key>[a-zA-Z0-9.-]+?)(?=['\"]\\))"
                 }
             }
         }
@@ -90,6 +110,7 @@
         "watch": "tsc -watch -p ./"
     },
     "devDependencies": {
+        "@types/lodash": "^4.14.180",
         "@types/minimatch": "^3.0.5",
         "@types/node": "^12.12.0",
         "@types/vscode": "^1.26.0",

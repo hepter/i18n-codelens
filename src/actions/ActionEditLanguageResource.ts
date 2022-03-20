@@ -1,13 +1,12 @@
 
 import { window } from 'vscode';
-import { addNewOrUpdateLanguageTranslation, getLanguageResourcesFiles } from '../Utils';
+import SettingUtils from '../SettingUtils';
+import { addNewOrUpdateLanguageTranslation } from '../Utils';
 
-export default async (key: string) => {
+export default async function ActionEditLanguageResource(key: string) {
 
-
-	const resourceList = await getLanguageResourcesFiles();
+	const resourceList = SettingUtils.getResources();
 	const existResourceList = [];
-
 
 	for (const resource of resourceList) {
 		if (resource.keyValuePairs[key]) {
@@ -41,6 +40,4 @@ export default async (key: string) => {
 	if (!isAborted && Object.keys(newTranslationsData).length) {
 		addNewOrUpdateLanguageTranslation(key, newTranslationsData, true);
 	}
-
-
-};
+}

@@ -1,58 +1,56 @@
 
-import { commands, Disposable, ExtensionContext, languages } from 'vscode';
+import * as vscode from 'vscode';
 import ActionAddLanguageResource from './actions/ActionAddLanguageResource';
+import ActionDeleteLanguageResource from './actions/ActionDeleteLanguageResource';
 import ActionEditLanguageResource from './actions/ActionEditLanguageResource';
 import ActionEnableDisableCodeLens from './actions/ActionEnableDisableCodeLens';
-import ActionRefreshLanguageResource from './actions/ActionRefreshLanguageResource';
+import ActionFocusResource from './actions/ActionFocusResource';
+import ActionResetAndReloadExtension from './actions/ActionResetAndReloadExtension';
 import { ResourceEditCodeAction } from './codeAction/ResourceEditCodeAction';
+import { actions, extensionName } from './constants';
 import { CodelensProvider } from './providers/CodelensProvider';
 import CompletionItemProvider from './providers/CompletionItemProvider';
 import { DecoratorProvider } from './providers/DecoratorProvider';
-import { DecoratorProviderUnusedResources } from './providers/DecoratorProviderUnusedResources';
 import DefinitionProvider from './providers/DefinitionProvider';
 import { HoverProvider } from './providers/HoverProvider';
-import { HoverProviderUnusedResources } from './providers/HoverProviderUnusedResources';
-import ResourceWatcher from './watcher/ResourceWatcher';
+import { ResourceTreeView } from './providers/ResourceTreeViewProvider';
+import SettingUtils from './SettingUtils';
 
-let disposables: Disposable[] = [];
-
-
-export function activate(context: ExtensionContext) {
-
-    const codelensProvider = new CodelensProvider(context);
-    const hoverProvider = new HoverProvider(context);
-    const hoverProviderUnusedResources = new HoverProviderUnusedResources(context);
-    const completionItemProvider = new CompletionItemProvider(context);
-    const codeActionsProvider = new ResourceEditCodeAction(context);
-    const definitionProvider = new DefinitionProvider(context);
-
-    disposables.push(ResourceWatcher());
-
-    disposables.push(languages.registerCodeLensProvider(['javascript', 'typescript'], codelensProvider));
-    disposables.push(languages.registerHoverProvider(['javascript', 'typescript'], hoverProvider));
-    disposables.push(languages.registerHoverProvider(['json'], hoverProviderUnusedResources));
-    disposables.push(languages.registerCompletionItemProvider(['javascript', 'typescript'], completionItemProvider, ''));
-    disposables.push(languages.registerCodeActionsProvider(['javascript', 'typescript'], codeActionsProvider));
-    disposables.push(languages.registerDefinitionProvider(['javascript', 'typescript', 'json'], definitionProvider));
+let disposables: vscode.Disposable[] = [];
 
 
-    disposables.push(commands.registerCommand("i18n-codelens.enableCodeLens", ActionEnableDisableCodeLens(true)));
-    disposables.push(commands.registerCommand("i18n-codelens.disableCodeLens", ActionEnableDisableCodeLens(false)));
-    disposables.push(commands.registerCommand("i18n-codelens.refreshLanguageResources", ActionRefreshLanguageResource));
-    disposables.push(commands.registerCommand("i18n-codelens.codelensActionAddLanguageResource", ActionAddLanguageResource, ''));
-    disposables.push(commands.registerCommand("i18n-codelens.codeActionEditLanguageResource", ActionEditLanguageResource, ''));
+export async function activate(context: vscode.ExtensionContext) {
 
 
+    const settingUtil = SettingUtils.getInstance();
+   
+    SettingUtils.onDidLoad((instanceDisposables) => {
+        const id = instanceDisposables;
+        id.push(new DecoratorProvider());
+        id.push(vscode.languages.registerCodeLensProvider(['javascript', 'typescript'], new CodelensProvider(id)));
+        id.push(vscode.languages.registerCompletionItemProvider(['javascript', 'typescript'], new CompletionItemProvider(), ''));
+        id.push(vscode.languages.registerDefinitionProvider(['javascript', 'typescript', 'json'], new DefinitionProvider()));
+        id.push(vscode.languages.registerHoverProvider(['javascript', 'typescript', 'json'], new HoverProvider()));
+        id.push(vscode.languages.registerCodeActionsProvider(['javascript', 'typescript', 'json'], new ResourceEditCodeAction()));
 
+        id.push(vscode.commands.registerCommand(actions.enableCodeLens, ActionEnableDisableCodeLens(true)));
+        id.push(vscode.commands.registerCommand(actions.disableCodeLens, ActionEnableDisableCodeLens(false)));
+        id.push(vscode.commands.registerCommand(actions.resetAndReloadExtension, ActionResetAndReloadExtension));
+        id.push(vscode.commands.registerCommand(actions.addResource, ActionAddLanguageResource));
+        id.push(vscode.commands.registerCommand(actions.editResource, ActionEditLanguageResource));
+        id.push(vscode.commands.registerCommand(actions.deleteResource, ActionDeleteLanguageResource));
+        id.push(vscode.commands.registerCommand(actions.focusResource, ActionFocusResource));
+
+        new ResourceTreeView(id);
+    }, null, disposables);
+
+    await settingUtil.initialize();
+
+    disposables.push(settingUtil);
     context.subscriptions.push(...disposables);
-
-    new DecoratorProvider(context);
-    new DecoratorProviderUnusedResources(context);
-
-    console.log('Congratulations, extension "i18n-codelens" is now active!');
+    console.log(`Congratulations, ${extensionName} is now active!`);
 }
 
-// this method is called when your extension is deactivated
 export function deactivate() {
     if (disposables) {
         disposables.forEach(item => item.dispose());
