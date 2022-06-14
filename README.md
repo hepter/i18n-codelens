@@ -10,6 +10,13 @@ It can be made to work in various projects by changing the regex information and
 
 ## Change Log
 
+##### v1.0.5
+- Multiple resource key detection fixed at the single line for Hover and Code Action Providers.
+
+##### v1.0.4
+- Logs forwarded to the custom i18 CodeLens output channel.
+- Minor fixes.
+  
 ##### v1.0.3
 
 Performance tweaks & refactored with new features
@@ -18,7 +25,7 @@ Performance tweaks & refactored with new features
 - Similar providers centralized.
 - All settings and reloading data's moved to SettingUtils.
 - Resource delete action added for Code or Resource file
-- Action & Conmfiguration settings renamed properly.
+- Action & Configuration settings renamed properly.
 - Resource hover text fixed after save.
 
 ##### v1.0.2

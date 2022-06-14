@@ -3,9 +3,8 @@ import SettingUtils from '../SettingUtils';
 
 export class HoverProvider implements vscode.HoverProvider {
 	provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken) {
-
-		const line = document.lineAt(position.line);
-		const key = SettingUtils.getResourceLineMatch(line.text)?.groups?.key;
+		const keyRange = document.getWordRangeAtPosition(position, SettingUtils.getResourceLineRegex());		
+		const key = document.getText(keyRange);
 		if (!key) return;
 
 		if (SettingUtils.isResourceFilePath(document.uri.path)) {
