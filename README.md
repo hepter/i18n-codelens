@@ -10,13 +10,18 @@ It can be made to work in various projects by changing the regex information and
 
 ## Change Log
 
+##### v1.0.6
+- Internal RegExp & Glob Pattern are updated to support better matching.
+
 ##### v1.0.5
+
 - Multiple resource key detection fixed at the single line for Hover and Code Action Providers.
 
 ##### v1.0.4
+
 - Logs forwarded to the custom i18 CodeLens output channel.
 - Minor fixes.
-  
+
 ##### v1.0.3
 
 Performance tweaks & refactored with new features

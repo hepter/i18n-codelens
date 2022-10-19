@@ -27,7 +27,7 @@ export default class SettingUtils implements vscode.Disposable {
 	private resourceDefinitionLocations = new Map<string, vscode.Location[]>();
 	private languageResourcesFilesCache: ResourceItem[] = [];
 	private initialLoadDone: boolean;
-	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\-_.]+?)(?=["'])/;
+	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\- _.]+?)(?=["'])/;
 	private codeFileRegex = /^(.(?!.*node_modules))*\.(jsx?|tsx?)$/;
 
 	public static readonly fireDebouncedOnDidChangeResourceLocations = debounce((...args) => SettingUtils._onDidChangeResourceLocations.fire(...args), 500);

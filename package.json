@@ -2,7 +2,7 @@
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
     "description": "i18n CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -91,13 +91,13 @@
                     "type": "string",
                     "description": "Language file glob patterns. (Language resource files must be key value object files.)",
                     "editPresentation": "singlelineText",
-                    "default": "**/locales/*.json"
+                    "default": "**/locales/**/*.json"
                 },
                 "i18n-codelens.resourceCodeDetectionRegex": {
                     "type": "string",
-                    "description": "Regex to detect hover or codeLenses for resource key.",
+                    "description": "Regex to detect hover or codeLenses for resource key. Example default matches: t('key') or T('key')",
                     "editPresentation": "singlelineText",
-                    "default": "(?<=T\\(['\"])(?<key>[a-zA-Z0-9.-]+?)(?=['\"]\\))"
+                    "default": "(?<=\\W[tT]\\(['\"])(?<key>[a-zA-Z0-9 .-]+?)(?=['\"]\\))"
                 }
             }
         }
