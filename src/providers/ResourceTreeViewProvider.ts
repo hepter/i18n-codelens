@@ -2,58 +2,74 @@ import * as vscode from 'vscode';
 import SettingUtils from '../SettingUtils';
 import * as path from 'path';
 import { actions } from '../constants';
-
-
+import { Logger } from '../Utils';
 
 export class ResourceTreeView {
+	constructor(disposables: vscode.Disposable[]) {
+		try {
+			Logger.log("🌳 Initializing ResourceTreeView...");
+			
+			const viewRef: { ref: vscode.TreeView<ResourceTreeItem> | null } = { ref: null };
 
-  constructor(disposables: vscode.Disposable[]) {
-    const viewRef: { ref: vscode.TreeView<ResourceTreeItem> | null } = { ref: null };
+			const view = vscode.window.createTreeView('i18nResourceDefinitions', { 
+				treeDataProvider: new ResourceTreeViewProvider(disposables, viewRef), 
+				showCollapseAll: true 
+			});
+			viewRef.ref = view;
 
-    const view = vscode.window.createTreeView('i18nResourceDefinitions', { treeDataProvider: new ResourceTreeViewProvider(disposables, viewRef), showCollapseAll: true });
-    viewRef.ref = view;
+			disposables.push(view);
+			// add supported languages to 'when' clause's context for the tree view
+			vscode.commands.executeCommand('setContext', 'i18TreeView.supportedLanguages', [
+				'javascript',
+				'typescript',
+				'javascriptreact',
+				'typescriptreact',
+			]);
 
-    disposables.push(view);
-    // add supported languages to 'when' clause's context for the tree view
-    vscode.commands.executeCommand('setContext', 'i18TreeView.supportedLanguages', [
-      'javascript',
-      'typescript',
-      'javascriptreact',
-      'typescriptreact',
-    ]);
+			// Go to location when selecting a resource in the tree view
+			disposables.push(vscode.commands.registerCommand(actions.revealResource, async (key: string) => {
+				try {
+					if (!SettingUtils.isRevealTreeView()) return;
 
-    // Go to location when selecting a resource in the tree view
-    disposables.push(vscode.commands.registerCommand(actions.revealResource, async (key: string) => {
-      if (!SettingUtils.isRevealTreeView()) return;
+					const matchedTreeItem = ResourceTreeViewProvider.getTreeItems().find(item => item.key === key);
+					if (matchedTreeItem) {
+						await view.reveal(matchedTreeItem, { select: true, focus: true });
+					}
+				} catch (error) {
+					Logger.log("❌ ERROR in revealResource command:", error);
+				}
+			}));
 
-      const matchedTreeItem = ResourceTreeViewProvider.getTreeItems().find(item => item.key === key);
-      if (matchedTreeItem) {
-        await view.reveal(matchedTreeItem, { select: true, focus: true });
-      }
+			//Reveal resource in tree view when clicked on the resource in the editor 
+			disposables.push(vscode.window.onDidChangeTextEditorSelection((e) => {
+				try {
+					const doc = e.textEditor.document;
 
-    }));
+					if (
+						SettingUtils.isCodeFilePath(doc.uri.fsPath) &&
+						e.selections.length === 1 &&
+						[
+							vscode.TextEditorSelectionChangeKind.Mouse,
+							vscode.TextEditorSelectionChangeKind.Keyboard
+						].some(k => k == e.kind)) {
+						const selection = e.selections[0];
+						const keyRange = doc.getWordRangeAtPosition(selection.start, SettingUtils.getResourceCodeRegex());
+						const key = doc.getText(keyRange);
+						if (key) {
+							vscode.commands.executeCommand(actions.revealResource, key);
+						}
+					}
+				} catch (error) {
+					Logger.log("❌ ERROR in text editor selection change:", error);
+				}
+			}));
 
-    //Reveal resource in tree view when clicked on the resource in the editor 
-    disposables.push(vscode.window.onDidChangeTextEditorSelection((e) => {
-      const doc = e.textEditor.document;
-
-      if (
-        SettingUtils.isCodeFilePath(doc.uri.fsPath) &&
-        e.selections.length === 1 &&
-        [
-          vscode.TextEditorSelectionChangeKind.Mouse,
-          vscode.TextEditorSelectionChangeKind.Keyboard
-        ].some(k => k == e.kind)) {
-        const selection = e.selections[0];
-        const keyRange = doc.getWordRangeAtPosition(selection.start, SettingUtils.getResourceCodeRegex());
-        const key = doc.getText(keyRange);
-        if (key) {
-          vscode.commands.executeCommand(actions.revealResource, key);
-        }
-      }
-    }));
-
-  }
+			Logger.log("✅ ResourceTreeView initialized successfully");
+		} catch (error) {
+			Logger.log("❌ ERROR initializing ResourceTreeView:", error);
+			throw error;
+		}
+	}
 }
 
 class ResourceTreeViewProvider implements vscode.TreeDataProvider<ResourceTreeItem> {

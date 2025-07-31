@@ -1,8 +1,8 @@
 {
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
-    "description": "i18n CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.",
-    "version": "1.0.6",
+    "description": "Advanced i18n CodeLens with bulk translation editing, interactive hover actions, and comprehensive language resource management for JavaScript, TypeScript, and React projects.",
+    "version": "1.1.0",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -95,9 +95,9 @@
                 },
                 "i18n-codelens.resourceCodeDetectionRegex": {
                     "type": "string",
-                    "description": "Regex to detect hover or codeLenses for resource key. Example default matches: t('key') or T('key')",
+                    "description": "Regular expression pattern to identify resource keys for hover information and CodeLenses. The default pattern matches: t('key'), T('key'), or keys preceded by /** @i18n */ comment.",
                     "editPresentation": "singlelineText",
-                    "default": "(?<=\\W[tT]\\(['\"])(?<key>[a-zA-Z0-9 .-]+?)(?=['\"]\\))"
+                    "default": "(?<=\\/\\*\\*\\s*?@i18n\\s*?\\*\\/\\s*?[\"']|[tT]\\(\\s*[\"'])(?<key>[A-Za-z0-9 .-]+?)(?=[\"'])"
                 }
             }
         }

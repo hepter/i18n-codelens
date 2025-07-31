@@ -3,77 +3,80 @@ import * as vscode from "vscode";
 import SettingUtils from './SettingUtils';
 
 async function applyEditByFileUri(fileUri: vscode.Uri, nearestResourceKey: string, resourceKey: string, resourceData: string, isUpdate?: boolean): Promise<void> {
-	const rawData = (await vscode.workspace.fs.readFile(fileUri)).toString();
+	try {
+		const rawData = (await vscode.workspace.fs.readFile(fileUri)).toString();
 
-	const lineRegex = /([\t ]*?)(["']).*?(,?)(\r?\n)/;// 4 RegExp groups
-	const resourceLineRegex = new RegExp(`(?<=["'])${nearestResourceKey}(?=["']).*\r?(?:\n|$)`);
-	const matchGroups = rawData.match(lineRegex);
+		const lineRegex = /([\t ]*?)(["']).*?(,?)(\r?\n)/;// 4 RegExp groups
+		const resourceLineRegex = new RegExp(`(?<=["'])${nearestResourceKey}(?=["']).*\r?(?:\n|$)`);
+		const matchGroups = rawData.match(lineRegex);
 
-	let newLine = `\n  "${resourceKey}": "${resourceData}",`;
-	if (matchGroups?.length == 5) { // 4 groups + 1 for the whole match
-		const space = matchGroups[1];
-		const quote = matchGroups[2];
-		const comma = matchGroups[3];
-		const newLineChar = matchGroups[4];
+		let newLine = `\n  "${resourceKey}": "${resourceData}",`;
+		if (matchGroups?.length == 5) { // 4 groups + 1 for the whole match
+			const space = matchGroups[1];
+			const quote = matchGroups[2];
+			const comma = matchGroups[3];
+			const newLineChar = matchGroups[4];
 
-		newLine = `${newLineChar}${space}${quote}${resourceKey}${quote}: ${quote}${resourceData}${quote}${comma}`;
-	}
-
-
-
-	let positionLine = 0;
-	let positionOffset = 0;
-
-	let lineCounter = 0;
-	const lines = rawData.split(/\r?\n/);
-	for (const line of lines) {
-		const matchNearestLine = resourceLineRegex.exec(line);
-		if (matchNearestLine) {
-			positionLine = lineCounter;
-			positionOffset = line.length;
-			break;
+			newLine = `${newLineChar}${space}${quote}${resourceKey}${quote}: ${quote}${resourceData}${quote}${comma}`;
 		}
-		lineCounter++;
-	}
 
-	const workspaceEdit = new vscode.WorkspaceEdit();
+		let positionLine = 0;
+		let positionOffset = 0;
 
-	if (isUpdate) {
-		workspaceEdit.replace(fileUri,
-			new vscode.Range(
-				new vscode.Position(positionLine, 0),
-				new vscode.Position(positionLine, positionOffset)
-			),
-			newLine.replace(/\r?\n/g, ''));
-	} else {
-		workspaceEdit.insert(fileUri, new vscode.Position(positionLine, positionOffset), newLine);
-	}
+		let lineCounter = 0;
+		const lines = rawData.split(/\r?\n/);
+		for (const line of lines) {
+			const matchNearestLine = resourceLineRegex.exec(line);
+			if (matchNearestLine) {
+				positionLine = lineCounter;
+				positionOffset = line.length;
+				break;
+			}
+			lineCounter++;
+		}
 
-	let dispose;
-	if (SettingUtils.isEnabledAutoSave()) {
-		dispose = vscode.workspace.onDidChangeTextDocument(e => {
-			e.document.save();
-		});
-	}
+		const workspaceEdit = new vscode.WorkspaceEdit();
 
-	await vscode.workspace.applyEdit(workspaceEdit);
-	dispose?.dispose();
+		if (isUpdate) {
+			workspaceEdit.replace(fileUri,
+				new vscode.Range(
+					new vscode.Position(positionLine, 0),
+					new vscode.Position(positionLine, positionOffset)
+				),
+				newLine.replace(/\r?\n/g, ''));
+		} else {
+			workspaceEdit.insert(fileUri, new vscode.Position(positionLine, positionOffset), newLine);
+		}
 
-	if (!isUpdate) {
-		positionLine++; // Current line is increased by 1
-	}
+		let dispose;
+		if (SettingUtils.isEnabledAutoSave()) {
+			dispose = vscode.workspace.onDidChangeTextDocument(e => {
+				e.document.save();
+			});
+		}
 
+		await vscode.workspace.applyEdit(workspaceEdit);
+		dispose?.dispose();
 
-	if (SettingUtils.isEnabledAutoFocus()) {
-		const document = await vscode.window.showTextDocument(fileUri, {
-			preserveFocus: true,
-			preview: false,
-		});
+		if (!isUpdate) {
+			positionLine++; // Current line is increased by 1
+		}
 
-		const newLinePosition = new vscode.Position(positionLine, 0);
-		const newLinePositionEnd = new vscode.Position(positionLine, newLine.length);
-		document.revealRange(new vscode.Range(newLinePosition, newLinePositionEnd), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-		document.selection = new vscode.Selection(newLinePosition, newLinePositionEnd);
+		if (SettingUtils.isEnabledAutoFocus()) {
+			const document = await vscode.window.showTextDocument(fileUri, {
+				preserveFocus: true,
+				preview: false,
+			});
+
+			const newLinePosition = new vscode.Position(positionLine, 0);
+			const newLinePositionEnd = new vscode.Position(positionLine, newLine.length);
+			document.revealRange(new vscode.Range(newLinePosition, newLinePositionEnd), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+			document.selection = new vscode.Selection(newLinePosition, newLinePositionEnd);
+		}
+	} catch (error) {
+		const fileName = vscode.workspace.asRelativePath(fileUri);
+		Logger.log(`❌ ERROR applying edit to file ${fileName}:`, error);
+		throw error;
 	}
 }
 
@@ -83,47 +86,62 @@ type TranslationData = {
 
 
 export async function addNewOrUpdateLanguageTranslation(resourceKey: string, modifiedTranslationsData: TranslationData, isUpdate?: boolean): Promise<void> {
+	try {
+		Logger.log(`${isUpdate ? '🔄 Updating' : '➕ Adding'} translations for key: ${resourceKey}`);
+		
+		const resourceList = SettingUtils.getResources();
+		const processedFiles: string[] = [];
+		
+		for (const resource of resourceList) {
+			const matchedTranslation = modifiedTranslationsData[resource.fileName];
+			if (matchedTranslation) {
+				try {
+					let closestResourceKey = resourceKey;
+					if (!isUpdate) {
+						const newKeySections = resourceKey.split('.');
+						const resourceKeys = Object.keys(resource.keyValuePairs);
+						let matchSequenceCount = 0;
+						let partialMatchedKeys = [];
 
-	const resourceList = SettingUtils.getResources();
-	for (const resource of resourceList) {
-		const matchedTranslation = modifiedTranslationsData[resource.fileName];
-		if (matchedTranslation) {
-			let closestResourceKey = resourceKey;
-			if (!isUpdate) {
-				const newKeySections = resourceKey.split('.');
-				const resourceKeys = Object.keys(resource.keyValuePairs);
-				let matchSequenceCount = 0;
-				let partialMatchedKeys = [];
-
-				// Find the closest key after sequentially matching the new key sections with the existing keys
-				for (const resourceKey of resourceKeys) {
-					const resourceSections = resourceKey.split('.');
-					let matchCount = 0;
-					for (let i = 0; i < newKeySections.length; i++) {
-						if (resourceSections[i] == newKeySections[i]) {
-							matchCount++;
-						} else {
-							break;
+						// Find the closest key after sequentially matching the new key sections with the existing keys
+						for (const resourceKey of resourceKeys) {
+							const resourceSections = resourceKey.split('.');
+							let matchCount = 0;
+							for (let i = 0; i < newKeySections.length; i++) {
+								if (resourceSections[i] == newKeySections[i]) {
+									matchCount++;
+								} else {
+									break;
+								}
+							}
+							if (matchCount > matchSequenceCount) {
+								matchSequenceCount = matchCount;
+								partialMatchedKeys = [];
+							}
+							if (matchCount === matchSequenceCount) {
+								partialMatchedKeys.push(resourceKey);
+							}
 						}
+						closestResourceKey = closest(resourceKey, partialMatchedKeys) ?? resourceKey;
 					}
-					if (matchCount > matchSequenceCount) {
-						matchSequenceCount = matchCount;
-						partialMatchedKeys = [];
-					}
-					if (matchCount === matchSequenceCount) {
-						partialMatchedKeys.push(resourceKey);
-					}
+					
+					await applyEditByFileUri(resource.uri, closestResourceKey, resourceKey, matchedTranslation, isUpdate);
+					processedFiles.push(resource.fileName);
+				} catch (error) {
+					Logger.log(`❌ ERROR processing file ${resource.fileName}:`, error);
+					vscode.window.showErrorMessage(`Failed to update ${resource.fileName}: ${error instanceof Error ? error.message : String(error)}`);
 				}
-				closestResourceKey = closest(resourceKey, partialMatchedKeys) ?? resourceKey;
-			}
-			try {
-				await applyEditByFileUri(resource.uri, closestResourceKey, resourceKey, matchedTranslation, isUpdate);
-				const languageKeys = Object.keys(modifiedTranslationsData);
-				Logger.log(`${isUpdate ? "Updated" : "Added new"}  translation(s) for key '${resourceKey}' in ${languageKeys.length} languages: ${languageKeys.join(", ")}`);
-			} catch (error) {
-				Logger.log(error);
 			}
 		}
+		
+		if (processedFiles.length > 0) {
+			Logger.log(`✅ ${isUpdate ? "Updated" : "Added"} translation(s) for key '${resourceKey}' in ${processedFiles.length} languages: ${processedFiles.join(", ")}`);
+		} else {
+			Logger.log(`⚠️ No files were processed for key '${resourceKey}'`);
+		}
+	} catch (error) {
+		Logger.log("❌ ERROR in addNewOrUpdateLanguageTranslation:", error);
+		throw error;
 	}
 }
 
@@ -159,24 +177,54 @@ export const normalizeString = (str: string) => {
 };
 
 const log = vscode.window.createOutputChannel("i18n CodeLens");
+
 export class Logger {
 	public static log(message: any, ...args: any[]) {
+		try {
+			const date = new Date();
+			const time = date.toLocaleTimeString();
+			const timeMilliseconds = date.getMilliseconds().toString().padStart(3, '0');
+			const timeLog = `[${time}.${timeMilliseconds}]`;
 
+			let msg = message + "";
+			if (args?.length) {
+				msg = msg.replace(/{(\d+)}/g, function (match, number) {
+					return typeof args[number] !== 'undefined' ? args[number] : match;
+				});
+			}
 
-		const date = new Date();
-		const time = date.toLocaleTimeString();
-		const timeMilliseconds = date.getMilliseconds().toString().padStart(3, '0');
-		const timeLog = `[${time}.${timeMilliseconds}]`;
+			// Add stack trace for errors
+			if (args.length > 0 && args[0] instanceof Error) {
+				msg += `\nStack trace: ${args[0].stack}`;
+			}
 
-		let msg = message + "";
-		if (args?.length) {
-			msg = msg.replace(/{(\d+)}/g, function (match, number) {
-				return typeof args[number] !== 'undefined' ? args[number] : match;
-			});
+			msg = `${timeLog} ${msg}`;
+			log.appendLine(msg);
+			console.log(message, ...args);
+
+			// Show critical errors in notification
+			if (message.includes('❌ CRITICAL ERROR')) {
+				log.show(true); // Show output panel for critical errors
+			}
+		} catch (error) {
+			// Fallback logging in case Logger itself fails
+			console.error('Logger failed:', error);
+			console.log('Original message:', message, ...args);
 		}
+	}
 
-		msg = `${timeLog} ${msg}`;
-		log.appendLine(msg);
-		console.log(message, ...args);
+	public static showCriticalError(message: string, error?: any) {
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		const fullMessage = `❌ CRITICAL ERROR: ${message}${error ? `: ${errorMessage}` : ''}`;
+		
+		this.log(fullMessage, error);
+		vscode.window.showErrorMessage(
+			`i18n CodeLens Critical Error: ${message}. Check output panel for details.`,
+			'Show Output'
+		).then(selection => {
+			if (selection === 'Show Output') {
+				log.show();
+			}
+		});
 	}
 }

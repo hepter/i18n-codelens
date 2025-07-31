@@ -19,4 +19,5 @@ export const actions = {
 	deleteResource: `${extensionName}.deleteLanguageResourceAction`,
 	focusResource: `${extensionName}.focusResourceAction`,
 	revealResource: `${extensionName}.revealResourceAction`,
+	bulkEditResources: `${extensionName}.bulkEditResourcesAction`,
 };

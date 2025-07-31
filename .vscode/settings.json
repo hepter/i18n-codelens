@@ -2,5 +2,12 @@
 	"editor.insertSpaces": false,
 	"search.exclude": {
 		"/out": true
+	},
+	"workbench.colorCustomizations": {
+		"editor.lineHighlightBackground": "#1073cf2d",
+		"editor.lineHighlightBorder": "#9fced11f",
+		"activityBar.background": "#143323",
+		"titleBar.activeBackground": "#1C4831",
+		"titleBar.activeForeground": "#F7FCFA"
 	}
 }

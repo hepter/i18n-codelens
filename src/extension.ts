@@ -6,6 +6,7 @@ import ActionEditLanguageResource from './actions/ActionEditLanguageResource';
 import ActionEnableDisableCodeLens from './actions/ActionEnableDisableCodeLens';
 import ActionFocusResource from './actions/ActionFocusResource';
 import ActionResetAndReloadExtension from './actions/ActionResetAndReloadExtension';
+import ActionBulkEditResources from './actions/ActionBulkEditResources';
 import { ResourceEditCodeAction } from './codeAction/ResourceEditCodeAction';
 import { actions, extensionName } from './constants';
 import { CodelensProvider } from './providers/CodelensProvider';
@@ -21,40 +22,83 @@ let disposables: vscode.Disposable[] = [];
 
 
 export async function activate(context: vscode.ExtensionContext) {
+    try {
+        Logger.log("🚀 Starting i18n CodeLens extension activation...");
 
+        const settingUtil = SettingUtils.getInstance();
 
-    const settingUtil = SettingUtils.getInstance();
+        Logger.log("👂 Setting up event listeners...");
+        SettingUtils.onDidLoad((instanceDisposables) => {
+            try {
+                Logger.log("🔌 Registering providers and commands...");
+                const id = instanceDisposables;
 
-    SettingUtils.onDidLoad((instanceDisposables) => {
-        const id = instanceDisposables;
-        id.push(new DecoratorProvider());
-        id.push(vscode.languages.registerCodeLensProvider(['javascript', 'typescript'], new CodelensProvider(id)));
-        id.push(vscode.languages.registerCompletionItemProvider(['javascript', 'typescript'], new CompletionItemProvider(), ''));
-        id.push(vscode.languages.registerDefinitionProvider(['javascript', 'typescript', 'json'], new DefinitionProvider()));
-        id.push(vscode.languages.registerHoverProvider(['javascript', 'typescript', 'json'], new HoverProvider()));
-        id.push(vscode.languages.registerCodeActionsProvider(['javascript', 'typescript', 'json'], new ResourceEditCodeAction()));
+                // Register providers
+                id.push(new DecoratorProvider());
+                id.push(vscode.languages.registerCodeLensProvider(['javascript', 'typescript', 'javascriptreact', 'typescriptreact'], new CodelensProvider(id)));
+                id.push(vscode.languages.registerCompletionItemProvider(['javascript', 'typescript', 'javascriptreact', 'typescriptreact'], new CompletionItemProvider(), ''));
+                id.push(vscode.languages.registerDefinitionProvider(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'json'], new DefinitionProvider()));
+                id.push(vscode.languages.registerHoverProvider(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'json'], new HoverProvider()));
+                id.push(vscode.languages.registerCodeActionsProvider(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'json'], new ResourceEditCodeAction()));
 
-        id.push(vscode.commands.registerCommand(actions.enableCodeLens, ActionEnableDisableCodeLens(true)));
-        id.push(vscode.commands.registerCommand(actions.disableCodeLens, ActionEnableDisableCodeLens(false)));
-        id.push(vscode.commands.registerCommand(actions.resetAndReloadExtension, ActionResetAndReloadExtension));
-        id.push(vscode.commands.registerCommand(actions.addResource, ActionAddLanguageResource));
-        id.push(vscode.commands.registerCommand(actions.editResource, ActionEditLanguageResource));
-        id.push(vscode.commands.registerCommand(actions.deleteResource, ActionDeleteLanguageResource));
-        id.push(vscode.commands.registerCommand(actions.focusResource, ActionFocusResource));
+				// Register commands
+				id.push(vscode.commands.registerCommand(actions.enableCodeLens, ActionEnableDisableCodeLens(true)));
+				id.push(vscode.commands.registerCommand(actions.disableCodeLens, ActionEnableDisableCodeLens(false)));
+				id.push(vscode.commands.registerCommand(actions.resetAndReloadExtension, ActionResetAndReloadExtension));
+				id.push(vscode.commands.registerCommand(actions.addResource, ActionAddLanguageResource));
+				id.push(vscode.commands.registerCommand(actions.editResource, ActionEditLanguageResource));
+				id.push(vscode.commands.registerCommand(actions.deleteResource, ActionDeleteLanguageResource));
+				id.push(vscode.commands.registerCommand(actions.focusResource, ActionFocusResource));
+				id.push(vscode.commands.registerCommand(actions.bulkEditResources, async (keys: string[], documentUri?: string) => {
+					let sourceDocument: vscode.TextDocument | undefined;
+					if (documentUri) {
+						try {
+							sourceDocument = await vscode.workspace.openTextDocument(vscode.Uri.parse(documentUri));
+						} catch (error) {
+							Logger.log("⚠️ Could not open source document:", error);
+						}
+					}
+					return ActionBulkEditResources(keys, sourceDocument);
+				}));                // Initialize tree view
+                new ResourceTreeView(id);
 
-        new ResourceTreeView(id);
-    }, null, disposables);
+                Logger.log("✅ Providers and commands registered successfully");
+            } catch (error) {
+                Logger.log("❌ ERROR registering providers and commands:", error);
+                vscode.window.showErrorMessage(`Failed to register extension components: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }, null, disposables);
 
-    await settingUtil.initialize();
+        Logger.log("⚙️ Starting initialization...");
+        await settingUtil.initialize();
 
-    disposables.push(settingUtil);
-    context.subscriptions.push(...disposables);
-    Logger.log(`Congratulations, ${extensionName} is now active!`);
+        disposables.push(settingUtil);
+        context.subscriptions.push(...disposables);
+
+        Logger.log(`🎉 ${extensionName} extension activated successfully!`);
+    } catch (error) {
+        Logger.log("❌ CRITICAL ERROR during extension activation:", error);
+        vscode.window.showErrorMessage(
+            `i18n CodeLens failed to activate: ${error instanceof Error ? error.message : String(error)}. Check output panel for details.`
+        );
+    }
 }
 
 export function deactivate() {
-    if (disposables) {
-        disposables.forEach(item => item.dispose());
+    try {
+        Logger.log("🔌 Deactivating i18n CodeLens extension...");
+        if (disposables) {
+            disposables.forEach(item => {
+                try {
+                    item.dispose();
+                } catch (error) {
+                    Logger.log("⚠️ ERROR disposing resource:", error);
+                }
+            });
+        }
+        disposables = [];
+        Logger.log("✅ i18n CodeLens extension deactivated successfully");
+    } catch (error) {
+        Logger.log("❌ ERROR during extension deactivation:", error);
     }
-    disposables = [];
 }

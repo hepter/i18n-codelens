@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { actions } from '../constants';
 import SettingUtils from '../SettingUtils';
+import { Logger } from '../Utils';
+
 /**
  * CodelensProvider
  */
@@ -22,58 +24,63 @@ export class CodelensProvider implements vscode.CodeLensProvider {
         }, null, disposables);
     }
 
-    public provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] {
+	public provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] {
+		try {
+			if (!SettingUtils.isEnabledCodeLens()) return [];
 
-        if (!SettingUtils.isEnabledCodeLens()) return [];
+			const resources = SettingUtils.getResources();
+			const resourceRegex = SettingUtils.getResourceCodeRegex();
 
-        const resources = SettingUtils.getResources();
-        const resourceRegex = SettingUtils.getResourceCodeRegex();
+			this.codeLenses = [];
+			const text = document.getText();
 
-        this.codeLenses = [];
-        const text = document.getText();
+			let matches;
+			while ((matches = resourceRegex.exec(text)) !== null) {
+				const line = document.lineAt(document.positionAt(matches.index).line);
+				const indexOf = line.text.indexOf(matches[0]);
+				const position = new vscode.Position(line.lineNumber, indexOf);
+				const range = document.getWordRangeAtPosition(position, new RegExp(resourceRegex));
+				const missingTranslationList: string[] = [];
+				const languageKey = matches[0];
 
-        let matches;
-        while ((matches = resourceRegex.exec(text)) !== null) {
+				if (languageKey) {
+					resources.forEach((item) => {
+						if (!item.keyValuePairs[languageKey]) {
+							missingTranslationList.push(item.fileName);
+						}
+					});
+				}
 
+				if (range && missingTranslationList.length) {
+					this.codeLenses.push(new vscode.CodeLens(range));
+					this.codeLensKeyWeakMap.set(this.codeLenses[this.codeLenses.length - 1], { languageKey, missingTranslationList });
+				}
+			}
+			return this.codeLenses;
+		} catch (error) {
+			Logger.log("❌ ERROR in provideCodeLenses:", error);
+			return [];
+		}
+	}
 
-            const line = document.lineAt(document.positionAt(matches.index).line);
-            const indexOf = line.text.indexOf(matches[0]);
-            const position = new vscode.Position(line.lineNumber, indexOf);
-            const range = document.getWordRangeAtPosition(position, new RegExp(resourceRegex));
-            const missingTranslationList: string[] = [];
-            const languageKey = matches[0];
+	public resolveCodeLens(codeLens: vscode.CodeLens, token: vscode.CancellationToken) {
+		try {
+			const codeLensState = this.codeLensKeyWeakMap.get(codeLens);
 
-            if (languageKey) {
-                resources.forEach((item) => {
-                    if (!item.keyValuePairs[languageKey]) {
-                        missingTranslationList.push(item.fileName);
-                    }
-                });
-
-            }
-
-            if (range && missingTranslationList.length) {
-                this.codeLenses.push(new vscode.CodeLens(range));
-                this.codeLensKeyWeakMap.set(this.codeLenses[this.codeLenses.length - 1], { languageKey, missingTranslationList });
-            }
-        }
-        return this.codeLenses;
-    }
-
-    public resolveCodeLens(codeLens: vscode.CodeLens, token: vscode.CancellationToken) {
-
-        const codeLensState = this.codeLensKeyWeakMap.get(codeLens);
-
-        if (SettingUtils.isEnabledCodeLens()) {
-            codeLens.command = {
-                title: `Missing Resource Key ('${codeLensState!.missingTranslationList.join(', ')}')`,
-                tooltip: `Click to add missing language translations key ('${codeLensState!.languageKey}' -> ${codeLensState!.missingTranslationList.join(', ')})`,
-                command: actions.addResource,
-                arguments: [codeLensState!.languageKey, codeLensState!.missingTranslationList]
-            };
-            return codeLens;
-        }
-        return null;
-    }
+			if (SettingUtils.isEnabledCodeLens() && codeLensState) {
+				codeLens.command = {
+					title: `Missing Resource Key ('${codeLensState.missingTranslationList.join(', ')}')`,
+					tooltip: `Click to add missing language translations key ('${codeLensState.languageKey}' -> ${codeLensState.missingTranslationList.join(', ')})`,
+					command: actions.addResource,
+					arguments: [codeLensState.languageKey, codeLensState.missingTranslationList]
+				};
+				return codeLens;
+			}
+			return null;
+		} catch (error) {
+			Logger.log("❌ ERROR in resolveCodeLens:", error);
+			return null;
+		}
+	}
 }
 

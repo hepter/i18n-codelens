@@ -1,9 +1,17 @@
 import * as vscode from 'vscode';
 import SettingUtils from '../SettingUtils';
+import { Logger } from '../Utils';
 
 export class DecoratorProvider implements vscode.Disposable {
 	constructor() {
-		this.initialize();
+		try {
+			Logger.log("🎨 Initializing DecoratorProvider...");
+			this.initialize();
+			Logger.log("✅ DecoratorProvider initialized successfully");
+		} catch (error) {
+			Logger.log("❌ ERROR initializing DecoratorProvider:", error);
+			throw error;
+		}
 	}
 
 	private disposables: vscode.Disposable[] = [];
@@ -72,17 +80,21 @@ export class DecoratorProvider implements vscode.Disposable {
 
 
 	public updateDecorations = async (textEditor?: vscode.TextEditor) => {
-		const activeEditor = textEditor || this.activeEditor;
+		try {
+			const activeEditor = textEditor || this.activeEditor;
 
-		if (!activeEditor || !SettingUtils.isEnabledCodeDecorator()) {
-			return;
-		}
+			if (!activeEditor || !SettingUtils.isEnabledCodeDecorator()) {
+				return;
+			}
 
-		if (SettingUtils.isResourceFilePath(activeEditor.document?.uri?.path)) {
-			this.updateDecorationForResource(activeEditor);
-		}
-		else if (SettingUtils.isCodeFilePath(activeEditor.document?.uri?.path)) {
-			this.updateDecorationForCode(activeEditor);
+			if (SettingUtils.isResourceFilePath(activeEditor.document?.uri?.path)) {
+				this.updateDecorationForResource(activeEditor);
+			}
+			else if (SettingUtils.isCodeFilePath(activeEditor.document?.uri?.path)) {
+				this.updateDecorationForCode(activeEditor);
+			}
+		} catch (error) {
+			Logger.log("❌ ERROR in updateDecorations:", error);
 		}
 	}
 
@@ -100,71 +112,74 @@ export class DecoratorProvider implements vscode.Disposable {
 
 
 	updateDecorationForCode(textEditor: vscode.TextEditor) {
+		try {
+			const resources = SettingUtils.getResources();
+			const resourceRegex = SettingUtils.getResourceCodeRegex();
 
+			const text = textEditor.document.getText();
 
-		const resources = SettingUtils.getResources();
-		const resourceRegex = SettingUtils.getResourceCodeRegex();
+			const successResources: vscode.DecorationOptions[] = [];
+			const errorResources: vscode.DecorationOptions[] = [];
+			const warnResources: vscode.DecorationOptions[] = [];
+			let match;
+			while ((match = resourceRegex.exec(text))) {
+				const startPos = textEditor.document.positionAt(match.index);
+				const endPos = textEditor.document.positionAt(match.index + match[0].length);
+				const range = new vscode.Range(startPos, endPos);
+				const word = textEditor.document.getText(range);
+				const decoration = { range };
 
-		const text = textEditor.document.getText();
-
-		const successResources: vscode.DecorationOptions[] = [];
-		const errorResources: vscode.DecorationOptions[] = [];
-		const warnResources: vscode.DecorationOptions[] = [];
-		let match;
-		while ((match = resourceRegex.exec(text))) {
-			const startPos = textEditor.document.positionAt(match.index);
-			const endPos = textEditor.document.positionAt(match.index + match[0].length);
-			const range = new vscode.Range(startPos, endPos);
-			const word = textEditor.document.getText(range);
-			const decoration = { range };
-
-			let matchCount = 0;
-			resources.forEach((item) => {
-				if (item.keyValuePairs[word]) {
-					matchCount++;
+				let matchCount = 0;
+				resources.forEach((item) => {
+					if (item.keyValuePairs[word]) {
+						matchCount++;
+					}
+				});
+				const isAllResourcesExist = matchCount == resources.length;
+				if (isAllResourcesExist) {
+					successResources.push(decoration);
+				} else if (matchCount > 0) {
+					warnResources.push(decoration);
 				}
-			});
-			const isAllResourcesExist = matchCount == resources.length;
-			if (isAllResourcesExist) {
-				successResources.push(decoration);
-			} else if (matchCount > 0) {
-				warnResources.push(decoration);
+				else {
+					errorResources.push(decoration);
+				}
 			}
-			else {
-				errorResources.push(decoration);
-			}
+
+			textEditor.setDecorations(this.resourceExistDecorationType, successResources);
+			textEditor.setDecorations(this.resourceNotFoundDecorationType, errorResources);
+			textEditor.setDecorations(this.resourceWarnDecorationType, warnResources);
+		} catch (error) {
+			Logger.log("❌ ERROR in updateDecorationForCode:", error);
 		}
-
-		textEditor.setDecorations(this.resourceExistDecorationType, successResources);
-		textEditor.setDecorations(this.resourceNotFoundDecorationType, errorResources);
-		textEditor.setDecorations(this.resourceWarnDecorationType, warnResources);
-
 	}
 
 	updateDecorationForResource(textEditor: vscode.TextEditor) {
+		try {
+			const text = textEditor.document.getText();
+			const lines = text.split(/\r?\n/g);
+			let lineNumber = 0;
+			const unusedResources = [];
 
-		const text = textEditor.document.getText();
-		const lines = text.split(/\r?\n/g);
-		let lineNumber = 0;
-		const unusedResources = [];
-
-
-		for (const line of lines) {
-			const match = SettingUtils.getResourceLineMatch(line);
-			const key = match?.groups?.key;
-			if (key) {
-				const locations = SettingUtils.getResourceLocationsByKey(key);
-				const locationsExceptResourceFiles = locations?.filter(location => !SettingUtils.isResourceFilePath(location.uri.fsPath));
-				if (!locationsExceptResourceFiles?.length) {
-					const range = new vscode.Range(new vscode.Position(lineNumber, 0), new vscode.Position(lineNumber, line.length));
-					const decoration = { range };
-					unusedResources.push(decoration);
+			for (const line of lines) {
+				const match = SettingUtils.getResourceLineMatch(line);
+				const key = match?.groups?.key;
+				if (key) {
+					const locations = SettingUtils.getResourceLocationsByKey(key);
+					const locationsExceptResourceFiles = locations?.filter(location => !SettingUtils.isResourceFilePath(location.uri.fsPath));
+					if (!locationsExceptResourceFiles?.length) {
+						const range = new vscode.Range(new vscode.Position(lineNumber, 0), new vscode.Position(lineNumber, line.length));
+						const decoration = { range };
+						unusedResources.push(decoration);
+					}
 				}
+				lineNumber++;
 			}
-			lineNumber++;
-		}
 
-		textEditor.setDecorations(this.resourceNoReferenceDecorationType, unusedResources);
+			textEditor.setDecorations(this.resourceNoReferenceDecorationType, unusedResources);
+		} catch (error) {
+			Logger.log("❌ ERROR in updateDecorationForResource:", error);
+		}
 	}
 
 }
