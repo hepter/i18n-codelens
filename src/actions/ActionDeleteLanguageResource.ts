@@ -1,11 +1,10 @@
-
 import * as vscode from 'vscode';
 import SettingUtils from '../SettingUtils';
 import { Logger } from '../Utils';
 
 export default async function ActionDeleteLanguageResource(key: string) {
 	try {
-		Logger.log(`🗑️ Starting delete language resource action for key: ${key}`);
+		Logger.info(`Starting delete language resource action for key: ${key}`);
 		
 		const resources = SettingUtils.getResources();
 		const workspaceEdit = new vscode.WorkspaceEdit();
@@ -40,17 +39,17 @@ export default async function ActionDeleteLanguageResource(key: string) {
 						newContent
 					);
 					
-					Logger.log(`📝 Marked key '${key}' for deletion from ${resource.fileName}`);
+					Logger.info(`Marked key '${key}' for deletion from ${resource.fileName}`);
 				}
 				
 			} catch (error) {
-				Logger.log(`❌ ERROR processing file ${resource.fileName}:`, error);
+				Logger.error(`ERROR processing file ${resource.fileName}:`, error);
 				vscode.window.showWarningMessage(`Failed to process ${resource.fileName}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
 
 		if (deletionCount > 0) {
-			Logger.log(`🔍 Found ${deletionCount} instances to delete, asking for confirmation...`);
+			Logger.info(`Found ${deletionCount} instances to delete, asking for confirmation...`);
 			
 			//delete prompt
 			const deletePrompt = await vscode.window.showInformationMessage(
@@ -59,7 +58,7 @@ export default async function ActionDeleteLanguageResource(key: string) {
 				'Yes'
 			);
 			if (deletePrompt !== 'Yes') {
-				Logger.log(`⚠️ User cancelled deletion`);
+				Logger.warn(`User cancelled deletion`);
 				return;
 			}
 
@@ -71,14 +70,14 @@ export default async function ActionDeleteLanguageResource(key: string) {
 			}
 
 			await vscode.workspace.applyEdit(workspaceEdit);
-			Logger.log(`✅ Successfully deleted translation(s) for key '${key}' from ${deletionCount} file(s)`);
+			Logger.info(`Successfully deleted translation(s) for key '${key}' from ${deletionCount} file(s)`);
 			dispose?.dispose();
 		} else {
-			Logger.log(`ℹ️ No instances of key '${key}' found to delete`);
+			Logger.info(`No instances of key '${key}' found to delete`);
 			vscode.window.showInformationMessage(`Key '${key}' not found in any resource files.`);
 		}
 	} catch (error) {
-		Logger.log("❌ ERROR in ActionDeleteLanguageResource:", error);
+		Logger.error("ERROR in ActionDeleteLanguageResource:", error);
 		vscode.window.showErrorMessage(`Failed to delete language resource: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }

@@ -58,7 +58,7 @@ export class CodelensProvider implements vscode.CodeLensProvider {
 			}
 			return this.codeLenses;
 		} catch (error) {
-			Logger.log("❌ ERROR in provideCodeLenses:", error);
+			Logger.error("ERROR in provideCodeLenses:", error);
 			return [];
 		}
 	}
@@ -78,9 +78,8 @@ export class CodelensProvider implements vscode.CodeLensProvider {
 			}
 			return null;
 		} catch (error) {
-			Logger.log("❌ ERROR in resolveCodeLens:", error);
+			Logger.error("ERROR in resolveCodeLens:", error);
 			return null;
 		}
 	}
 }
-

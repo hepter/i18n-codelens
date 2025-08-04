@@ -1,6 +1,7 @@
 import { closest } from 'fastest-levenshtein';
 import * as vscode from "vscode";
 import SettingUtils from './SettingUtils';
+import { extensionName, settings } from './constants';
 
 async function applyEditByFileUri(fileUri: vscode.Uri, nearestResourceKey: string, resourceKey: string, resourceData: string, isUpdate?: boolean): Promise<void> {
 	try {
@@ -75,7 +76,7 @@ async function applyEditByFileUri(fileUri: vscode.Uri, nearestResourceKey: strin
 		}
 	} catch (error) {
 		const fileName = vscode.workspace.asRelativePath(fileUri);
-		Logger.log(`❌ ERROR applying edit to file ${fileName}:`, error);
+		Logger.error(`ERROR applying edit to file ${fileName}:`, error);
 		throw error;
 	}
 }
@@ -87,11 +88,11 @@ type TranslationData = {
 
 export async function addNewOrUpdateLanguageTranslation(resourceKey: string, modifiedTranslationsData: TranslationData, isUpdate?: boolean): Promise<void> {
 	try {
-		Logger.log(`${isUpdate ? '🔄 Updating' : '➕ Adding'} translations for key: ${resourceKey}`);
-		
+		Logger.info(`${isUpdate ? 'Updating' : 'Adding'} translations for key: ${resourceKey}`);
+
 		const resourceList = SettingUtils.getResources();
 		const processedFiles: string[] = [];
-		
+
 		for (const resource of resourceList) {
 			const matchedTranslation = modifiedTranslationsData[resource.fileName];
 			if (matchedTranslation) {
@@ -124,23 +125,23 @@ export async function addNewOrUpdateLanguageTranslation(resourceKey: string, mod
 						}
 						closestResourceKey = closest(resourceKey, partialMatchedKeys) ?? resourceKey;
 					}
-					
+
 					await applyEditByFileUri(resource.uri, closestResourceKey, resourceKey, matchedTranslation, isUpdate);
 					processedFiles.push(resource.fileName);
 				} catch (error) {
-					Logger.log(`❌ ERROR processing file ${resource.fileName}:`, error);
+					Logger.error(`ERROR processing file ${resource.fileName}:`, error);
 					vscode.window.showErrorMessage(`Failed to update ${resource.fileName}: ${error instanceof Error ? error.message : String(error)}`);
 				}
 			}
 		}
-		
+
 		if (processedFiles.length > 0) {
-			Logger.log(`✅ ${isUpdate ? "Updated" : "Added"} translation(s) for key '${resourceKey}' in ${processedFiles.length} languages: ${processedFiles.join(", ")}`);
+			Logger.info(`${isUpdate ? "Updated" : "Added"} translation(s) for key '${resourceKey}' in ${processedFiles.length} languages: ${processedFiles.join(", ")}`);
 		} else {
-			Logger.log(`⚠️ No files were processed for key '${resourceKey}'`);
+			Logger.warn(`No files were processed for key '${resourceKey}'`);
 		}
 	} catch (error) {
-		Logger.log("❌ ERROR in addNewOrUpdateLanguageTranslation:", error);
+		Logger.error("ERROR in addNewOrUpdateLanguageTranslation:", error);
 		throw error;
 	}
 }
@@ -178,7 +179,29 @@ export const normalizeString = (str: string) => {
 
 const log = vscode.window.createOutputChannel("i18n CodeLens");
 
+enum LogLevel {
+	Off = 0,
+	Error = 1,
+	Warn = 2,
+	Info = 3,
+	Debug = 4
+}
+
+function getLogLevel(): LogLevel {
+	const config = vscode.workspace.getConfiguration(extensionName).get(settings.logLevel, "warn");
+	const level = config?.toLowerCase();
+	switch (level) {
+		case 'debug': return LogLevel.Debug;
+		case 'info': return LogLevel.Info;
+		case 'warn': return LogLevel.Warn;
+		case 'error': return LogLevel.Error;
+		default: return LogLevel.Off;
+	}
+}
+
 export class Logger {
+	private static level: LogLevel = getLogLevel();
+
 	public static log(message: any, ...args: any[]) {
 		try {
 			const date = new Date();
@@ -193,7 +216,6 @@ export class Logger {
 				});
 			}
 
-			// Add stack trace for errors
 			if (args.length > 0 && args[0] instanceof Error) {
 				msg += `\nStack trace: ${args[0].stack}`;
 			}
@@ -202,21 +224,45 @@ export class Logger {
 			log.appendLine(msg);
 			console.log(message, ...args);
 
-			// Show critical errors in notification
 			if (message.includes('❌ CRITICAL ERROR')) {
-				log.show(true); // Show output panel for critical errors
+				log.show(true);
 			}
 		} catch (error) {
-			// Fallback logging in case Logger itself fails
 			console.error('Logger failed:', error);
 			console.log('Original message:', message, ...args);
 		}
 	}
 
+	public static error(message: string, ...args: any[]) {
+		if (this.level >= LogLevel.Error) {
+			this.log(`[ERROR] ${message}`, ...args);
+		}
+	}
+
+	public static warn(message: string, ...args: any[]) {
+		if (this.level >= LogLevel.Warn) {
+			this.log(`[WARN] ${message}`, ...args);
+		}
+	}
+
+	public static info(message: string, ...args: any[]) {
+		if (this.level >= LogLevel.Info) {
+			this.log(`[INFO] ${message}`, ...args);
+		}
+	}
+
+	public static debug(message: string, ...args: any[]) {
+		if (this.level >= LogLevel.Debug) {
+			this.log(`[DEBUG] ${message}`, ...args);
+		}
+	}
+
+
+
 	public static showCriticalError(message: string, error?: any) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		const fullMessage = `❌ CRITICAL ERROR: ${message}${error ? `: ${errorMessage}` : ''}`;
-		
+
 		this.log(fullMessage, error);
 		vscode.window.showErrorMessage(
 			`i18n CodeLens Critical Error: ${message}. Check output panel for details.`,

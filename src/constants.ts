@@ -7,7 +7,9 @@ export const settings = {
 	autoFocus: "autoFocusAfterModified",
 	globPattern: "resourceFilesGlobPattern",
 	resourceRegex: "resourceCodeDetectionRegex",
-	revealTreeView: "revealResourceInTreeView"
+	revealTreeView: "revealResourceInTreeView",
+	codeFileRegex: "codeFileRegex",
+	logLevel: "logLevel",
 };
 
 export const actions = {

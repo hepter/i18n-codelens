@@ -10,12 +10,12 @@ interface BulkEditData {
 
 export default async function ActionBulkEditResources(keysFromDocument: string[], sourceDocument?: vscode.TextDocument) {
 	try {
-		Logger.log(`📋 Starting bulk edit for ${keysFromDocument.length} keys:`, keysFromDocument);
+		Logger.info(`Starting bulk edit for ${keysFromDocument.length} keys:`, keysFromDocument);
 		
 		const sourceFileName = sourceDocument ? sourceDocument.fileName.split('\\').pop()?.split('/').pop() || 'Unknown' : 'Command Palette';
 		const sourceFilePath = sourceDocument ? sourceDocument.fileName : '';
 		
-		Logger.log(`📄 Source file: ${sourceFileName} (${sourceFilePath})`);
+		Logger.info(`Source file: ${sourceFileName} (${sourceFilePath})`);
 
 		const resources = SettingUtils.getResources();
 		if (!resources.length) {
@@ -68,14 +68,14 @@ export default async function ActionBulkEditResources(keysFromDocument: string[]
 		);
 
 	} catch (error) {
-		Logger.log("❌ ERROR in ActionBulkEditResources:", error);
+		Logger.error("ERROR in ActionBulkEditResources:", error);
 		vscode.window.showErrorMessage(`Failed to open bulk edit: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
 
 async function deleteBulkResources(keys: string[]) {
 	try {
-		Logger.log(`🗑️ Starting bulk delete for ${keys.length} keys:`, keys);
+		Logger.info(`Starting bulk delete for ${keys.length} keys:`, keys);
 
 		const resources = SettingUtils.getResources();
 		const workspaceEdit = new vscode.WorkspaceEdit();
@@ -114,11 +114,11 @@ async function deleteBulkResources(keys: string[]) {
 					);
 					updatedFileCount++;
 
-					Logger.log(`🗑️ Deleted ${deletedCount} keys from ${resource.fileName}`);
+					Logger.info(`Deleted ${deletedCount} keys from ${resource.fileName}`);
 				}
 
 			} catch (error) {
-				Logger.log(`❌ ERROR processing file ${resource.fileName}:`, error);
+				Logger.error(`ERROR processing file ${resource.fileName}:`, error);
 				vscode.window.showErrorMessage(`Failed to delete from ${resource.fileName}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
@@ -135,22 +135,22 @@ async function deleteBulkResources(keys: string[]) {
 			await vscode.workspace.applyEdit(workspaceEdit);
 			dispose?.dispose();
 
-			Logger.log(`✅ Bulk delete completed successfully for ${updatedFileCount} files`);
+			Logger.info(`Bulk delete completed successfully for ${updatedFileCount} files`);
 			vscode.window.showInformationMessage(`Successfully deleted ${keys.length} translation keys from ${updatedFileCount} files.`);
 		} else {
-			Logger.log("ℹ️ No keys were found to delete");
+			Logger.info("No keys were found to delete");
 			vscode.window.showInformationMessage("No keys were found to delete.");
 		}
 
 	} catch (error) {
-		Logger.log("❌ ERROR in bulk delete:", error);
+		Logger.error("ERROR in bulk delete:", error);
 		vscode.window.showErrorMessage(`Failed to delete translations: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
 
 async function saveBulkEditData(data: BulkEditData) {
 	try {
-		Logger.log("💾 Saving bulk edit data...");
+		Logger.info("Saving bulk edit data...");
 
 		const resources = SettingUtils.getResources();
 		const workspaceEdit = new vscode.WorkspaceEdit();
@@ -206,11 +206,11 @@ async function saveBulkEditData(data: BulkEditData) {
 					);
 					updatedFileCount++;
 
-					Logger.log(`📝 Updated ${Object.keys(changes).length} keys in ${resource.fileName}`);
+					Logger.info(`Updated ${Object.keys(changes).length} keys in ${resource.fileName}`);
 				}
 
 			} catch (error) {
-				Logger.log(`❌ ERROR processing file ${resource.fileName}:`, error);
+				Logger.error(`ERROR processing file ${resource.fileName}:`, error);
 				vscode.window.showErrorMessage(`Failed to update ${resource.fileName}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
@@ -227,15 +227,15 @@ async function saveBulkEditData(data: BulkEditData) {
 			await vscode.workspace.applyEdit(workspaceEdit);
 			dispose?.dispose();
 
-			Logger.log(`✅ Bulk edit completed successfully for ${updatedFileCount} files`);
+			Logger.info(`Bulk edit completed successfully for ${updatedFileCount} files`);
 			vscode.window.showInformationMessage(`Successfully updated ${updatedFileCount} translation files.`);
 		} else {
-			Logger.log("ℹ️ No changes were made in bulk edit");
+			Logger.info("No changes were made in bulk edit");
 			vscode.window.showInformationMessage("No changes were made.");
 		}
 
 	} catch (error) {
-		Logger.log("❌ ERROR saving bulk edit data:", error);
+		Logger.error("ERROR saving bulk edit data:", error);
 		vscode.window.showErrorMessage(`Failed to save translations: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }

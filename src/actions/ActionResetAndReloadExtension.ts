@@ -3,13 +3,12 @@ import { Logger } from "../Utils";
 
 export default function ActionResetAndReloadExtension() {
 	try {
-		Logger.log("🔄 Resetting and reloading i18n CodeLens extension...");
+		Logger.info("Resetting and reloading i18n CodeLens extension...");
 		const instance = SettingUtils.getInstance(true);
 		instance.initialize();
-		Logger.log("✅ Extension reset and reload completed");
+		Logger.info("Extension reset and reload completed");
 	} catch (error) {
-		Logger.log("❌ ERROR during extension reset and reload:", error);
+		Logger.error("ERROR during extension reset and reload:", error);
 		throw error;
 	}
 }
-

@@ -2,6 +2,8 @@ import { debounce } from 'lodash';
 import { IMinimatch, Minimatch } from 'minimatch';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import ignore from 'ignore';
 import { extensionName, settings } from './constants';
 import { Logger } from './Utils';
 
@@ -26,8 +28,9 @@ export default class SettingUtils implements vscode.Disposable {
 	private resourceDefinitionLocations = new Map<string, vscode.Location[]>();
 	private languageResourcesFilesCache: ResourceItem[] = [];
 	private initialLoadDone: boolean;
-	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\- _.]+?)(?=["'])/;
+	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\- _.]+?)(?=["'])/g;
 	private codeFileRegex = /^(.(?!.*node_modules))*\.(jsx?|tsx?)$/;
+	private gitIgnore!: ignore.Ignore;
 
 	public static readonly fireDebouncedOnDidChangeResourceLocations = debounce((...args) => SettingUtils._onDidChangeResourceLocations.fire(...args), 500);
 	public static readonly fireDebouncedOnDidChangeResource = debounce((...args) => SettingUtils._onDidChangeResource.fire(...args), 500);
@@ -37,6 +40,40 @@ export default class SettingUtils implements vscode.Disposable {
 	public static readonly onDidChangeResource = this._onDidChangeResource.event;
 	public static readonly onDidLoad = this._onDidLoad.event;
 
+	private loadGitignore() {
+		const folders = vscode.workspace.workspaceFolders;
+		if (!folders?.length) {
+			this.gitIgnore = ignore();
+			return;
+		}
+
+		const root = folders[0].uri.fsPath;
+		const giPath = path.join(root, '.gitignore');
+		try {
+			const content = fs.readFileSync(giPath, 'utf8');
+			this.gitIgnore = ignore().add(content);
+			Logger.info(`Loaded ${(this.gitIgnore as any)._rules?._rules?.length} rules from .gitignore`);
+		} catch {
+			this.gitIgnore = ignore();
+			Logger.info('ℹ️ .gitignore not found, no rules loaded');
+		}
+	}
+	private watchGitignore() {
+		const folders = vscode.workspace.workspaceFolders;
+		if (!folders?.length) return;
+
+		const root = folders[0].uri.fsPath;
+		const giPath = path.join(root, '.gitignore');
+		try {
+			const watcher = fs.watch(giPath, () => {
+				Logger.info('♻️ .gitignore changed, reloading...');
+				this.loadGitignore();
+			});
+			SettingUtils.disposables.push({ dispose: () => watcher.close() });
+		} catch {
+			Logger.info('ℹ️ .gitignore watcher could not be established (file not found or inaccessible)');
+		}
+	}
 
 
 	public static getInstance(reload = false): SettingUtils {
@@ -52,25 +89,29 @@ export default class SettingUtils implements vscode.Disposable {
 
 	public async initialize() {
 		try {
-			Logger.log("🚀 i18n CodeLens initializing...");
+			Logger.info("i18n CodeLens initializing...");
 			this.initialLoadDone = false;
 
-			// Step 1: Read and listen configs
-			Logger.log("📋 Reading configuration settings...");
-			this.readAndListenConfigs();
-			Logger.log("✅ Configuration settings loaded successfully");
+			this.loadGitignore();
+			this.watchGitignore();
 
-			// Step 2: Read and listen files  
-			Logger.log("📁 Starting file scanning and monitoring...");
+			Logger.info("Reading configuration settings...");
+			this.readAndListenConfigs();
+			this.refreshGlobFromConfig();
+			this.refreshRegexFromConfig();
+			this.refreshCodeFileRegexFromConfig();
+			Logger.info("Configuration settings loaded successfully");
+
+			Logger.info("Starting file scanning and monitoring...");
 			await this.readAndListenFiles();
-			Logger.log("✅ File scanning and monitoring setup completed");
+			Logger.info("File scanning and monitoring setup completed");
 
 			this.initialLoadDone = true;
 
-			Logger.log("🎉 i18n CodeLens initialization completed successfully!");
+			Logger.info("i18n CodeLens initialization completed successfully!");
 			SettingUtils._onDidLoad.fire(SettingUtils.disposables);
 		} catch (error) {
-			Logger.log("❌ CRITICAL ERROR during i18n CodeLens initialization:", error);
+			Logger.showCriticalError("during i18n CodeLens initialization:", error);
 			vscode.window.showErrorMessage(
 				`i18n CodeLens failed to initialize: ${error instanceof Error ? error.message : String(error)}. Check output panel for details.`
 			);
@@ -80,39 +121,39 @@ export default class SettingUtils implements vscode.Disposable {
 
 	private readAndListenConfigs() {
 		try {
-			Logger.log("🔧 Refreshing glob pattern from config...");
+			Logger.info("Refreshing glob pattern from config...");
 			this.refreshGlobFromConfig();
 
-			Logger.log("🔧 Refreshing regex pattern from config...");
+			Logger.info("Refreshing regex pattern from config...");
 			this.refreshRegexFromConfig();
 
-			Logger.log("👂 Setting up configuration change listeners...");
+			Logger.info("Setting up configuration change listeners...");
 			vscode.workspace.onDidChangeConfiguration(async (e) => {
 				try {
 					let isChanged = false;
 					if (e.affectsConfiguration(settings.globPattern)) {
-						Logger.log("🔄 Glob pattern configuration changed, refreshing...");
+						Logger.info("Glob pattern configuration changed, refreshing...");
 						this.refreshGlobFromConfig();
 						await this.refreshResourceFromFiles(true);
 						await this.findAllResourceReferencesFromJson();
 						isChanged = true;
 					} else if (e.affectsConfiguration(settings.resourceRegex)) {
-						Logger.log("🔄 Resource regex configuration changed, refreshing...");
+						Logger.info("Resource regex configuration changed, refreshing...");
 						this.refreshRegexFromConfig();
 						await this.findAllResourceReferencesFromCodeFiles();
 						isChanged = true;
 					}
 
 					if (isChanged) {
-						Logger.log("✅ Configuration changes applied successfully!");
+						Logger.info("Configuration changes applied successfully!");
 					}
 				} catch (error) {
-					Logger.log("❌ ERROR applying configuration changes:", error);
+					Logger.error("ERROR applying configuration changes:", error);
 					vscode.window.showErrorMessage(`Failed to apply configuration changes: ${error instanceof Error ? error.message : String(error)}`);
 				}
 			}, null, SettingUtils.disposables);
 		} catch (error) {
-			Logger.log("❌ CRITICAL ERROR in readAndListenConfigs:", error);
+			Logger.showCriticalError("in readAndListenConfigs:", error);
 			throw error;
 		}
 	}
@@ -121,11 +162,11 @@ export default class SettingUtils implements vscode.Disposable {
 	private refreshGlobFromConfig() {
 		try {
 			const configValue = vscode.workspace.getConfiguration(extensionName).get(settings.globPattern, "**/locales/*.json");
-			Logger.log(`📂 Setting glob pattern: ${configValue}`);
+			Logger.info(`Setting glob pattern: ${configValue}`);
 			this.globPattern = configValue;
 			this.mm = new Minimatch(this.globPattern);
 		} catch (error) {
-			Logger.log("❌ ERROR refreshing glob from config:", error);
+			Logger.error("ERROR refreshing glob from config:", error);
 			// Use default values on error
 			this.globPattern = "**/locales/*.json";
 			this.mm = new Minimatch(this.globPattern);
@@ -136,31 +177,43 @@ export default class SettingUtils implements vscode.Disposable {
 	private refreshRegexFromConfig = () => {
 		try {
 			const rx = vscode.workspace.getConfiguration(extensionName).get(settings.resourceRegex, "");
-			Logger.log(`🔍 Setting resource regex: ${rx}`);
+			Logger.info(`Setting resource regex: ${rx}`);
 			this.codeRegex = new RegExp(rx, "g");
 
 		} catch (error) {
-			Logger.log("❌ ERROR refreshing regex from config:", error);
+			Logger.error("ERROR refreshing regex from config:", error);
 			// Use default regex on error
-			this.codeRegex = /(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["'])/g;
+			this.codeRegex = /(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["'])/g;
 			vscode.window.showWarningMessage("Failed to load regex config, using default.");
+		}
+	}
+	private refreshCodeFileRegexFromConfig() {
+		try {
+			const configValue = vscode.workspace.getConfiguration(extensionName).get(settings.codeFileRegex, "\\.(jsx?|tsx?)$");
+			Logger.info(`Setting code file regex: ${configValue}`);
+			this.codeFileRegex = new RegExp(configValue);
+		} catch (error) {
+			Logger.error("ERROR refreshing code file regex from config:", error);
+			// Use default regex on error
+			this.codeFileRegex = /\.(jsx?|tsx?)$/;
+			vscode.window.showWarningMessage("Failed to load code file regex config, using default.");
 		}
 	}
 	private async refreshResourceFromFiles(noCache = false) {
 		try {
-			Logger.log(`🔍 Scanning for resource files with pattern: ${this.globPattern}`);
+			Logger.info(`Scanning for resource files with pattern: ${this.globPattern}`);
 			const vscodeUriList = await vscode.workspace.findFiles(this.globPattern, excludePattern);
-			Logger.log(`📄 Found ${vscodeUriList.length} resource files`);
+			Logger.info(`Found ${vscodeUriList.length} resource files`);
 
 			if (noCache) {
-				Logger.log("🗑️ Clearing resource cache");
+				Logger.info("Clearing resource cache");
 				this.languageResourcesFilesCache = [];
 			}
 
 			await Promise.all(vscodeUriList.map(uri => this.insertOrUpdateResourceByUri(uri)));
-			Logger.log(`✅ Successfully processed ${vscodeUriList.length} resource files`);
+			Logger.info(`Successfully processed ${vscodeUriList.length} resource files`);
 		} catch (error) {
-			Logger.log("❌ ERROR refreshing resources from files:", error);
+			Logger.error("ERROR refreshing resources from files:", error);
 			throw error;
 		}
 	}
@@ -169,26 +222,26 @@ export default class SettingUtils implements vscode.Disposable {
 		try {
 			if (isDelete) {
 				const fileName = path.parse(fileUri.fsPath).name;
-				Logger.log(`🗑️ Removing resource file from cache: ${fileName}`);
+				Logger.info(`Removing resource file from cache: ${fileName}`);
 				this.languageResourcesFilesCache = this.languageResourcesFilesCache.filter(r => r.uri.fsPath !== fileUri.fsPath);
 				return;
 			}
 
 			const filePath = path.parse(fileUri.fsPath);
-			Logger.log(`📖 Processing resource file: ${filePath.name}`);
+			Logger.info(`Processing resource file: ${filePath.name}`);
 
 			const data = (await vscode.workspace.fs.readFile(fileUri)).toString();
 			const keyValuePairs = JSON.parse(data);
 
 			if (!keyValuePairs || typeof keyValuePairs !== 'object') {
 				const errorMsg = `${filePath.name} is not a valid JSON object and will be ignored!`;
-				Logger.log(`⚠️ ${errorMsg}`);
+				Logger.warn(`${errorMsg}`);
 				vscode.window.showWarningMessage(errorMsg);
 				return;
 			}
 
 			const keyCount = Object.keys(keyValuePairs).length;
-			Logger.log(`📝 Found ${keyCount} translation keys in ${filePath.name}`);
+			Logger.info(`Found ${keyCount} translation keys in ${filePath.name}`);
 
 			const newResource: ResourceItem = ({
 				uri: fileUri,
@@ -198,10 +251,10 @@ export default class SettingUtils implements vscode.Disposable {
 
 			const matchedResource = this.languageResourcesFilesCache.find(res => res.uri.fsPath === newResource.uri.fsPath);
 			if (matchedResource) {
-				Logger.log(`🔄 Updating existing resource: ${filePath.name}`);
+				Logger.info(`Updating existing resource: ${filePath.name}`);
 				matchedResource.keyValuePairs = newResource.keyValuePairs;
 			} else {
-				Logger.log(`➕ Adding new resource: ${filePath.name}`);
+				Logger.info(`Adding new resource: ${filePath.name}`);
 				this.languageResourcesFilesCache.push(newResource);
 			}
 
@@ -211,10 +264,10 @@ export default class SettingUtils implements vscode.Disposable {
 		} catch (error) {
 			const fileName = path.parse(fileUri.fsPath).name;
 			if (error instanceof SyntaxError) {
-				Logger.log(`❌ JSON parse error in ${fileName}:`, error.message);
+				Logger.error(`JSON parse error in ${fileName}:`, error.message);
 				vscode.window.showErrorMessage(`Invalid JSON in ${fileName}: ${error.message}`);
 			} else {
-				Logger.log(`❌ ERROR processing resource file ${fileName}:`, error);
+				Logger.error(`ERROR processing resource file ${fileName}:`, error);
 				vscode.window.showErrorMessage(`Failed to process ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
@@ -222,32 +275,32 @@ export default class SettingUtils implements vscode.Disposable {
 
 	private async readAndListenFiles() {
 		try {
-			Logger.log("📁 Starting parallel file processing...");
+			Logger.info("Starting parallel file processing...");
 			await Promise.all([
 				this.readAndListenResourceFiles(),
 				this.readAndListenCodeFiles()
 			]);
-			Logger.log("✅ File processing completed successfully");
+			Logger.info("File processing completed successfully");
 		} catch (error) {
-			Logger.log("❌ CRITICAL ERROR in readAndListenFiles:", error);
+			Logger.showCriticalError("in readAndListenFiles:", error);
 			throw error;
 		}
 	}
 
 	private async readAndListenResourceFiles() {
 		try {
-			Logger.log("📂 Loading resource files...");
+			Logger.info("Loading resource files...");
 			await this.refreshResourceFromFiles();
 
-			Logger.log("🔍 Finding resource references in JSON files...");
+			Logger.info("Finding resource references in JSON files...");
 			await this.findAllResourceReferencesFromJson();
 
-			Logger.log("👂 Setting up resource file watchers...");
+			Logger.info("Setting up resource file watchers...");
 			const watcher = vscode.workspace.createFileSystemWatcher(this.globPattern);
 			const watcherHandler = (type: "change" | "create" | "delete") => async (e: vscode.Uri) => {
 				try {
 					const file = path.parse(e.fsPath);
-					Logger.log(`📄 Resource file '${file.name}' was affected by '${type}' event`);
+					Logger.info(`Resource file '${file.name}' was affected by '${type}' event`);
 
 					await this.insertOrUpdateResourceByUri(e, type === "delete");
 
@@ -262,7 +315,7 @@ export default class SettingUtils implements vscode.Disposable {
 						await this.updateLocationsFromResourceFile(e);
 					}
 				} catch (error) {
-					Logger.log(`❌ ERROR handling ${type} event for resource file:`, error);
+					Logger.error(`ERROR handling ${type} event for resource file:`, error);
 					vscode.window.showWarningMessage(`Failed to handle file ${type} event: ${error instanceof Error ? error.message : String(error)}`);
 				}
 			};
@@ -272,25 +325,25 @@ export default class SettingUtils implements vscode.Disposable {
 			watcher.onDidDelete(watcherHandler("delete"), null, SettingUtils.disposables);
 
 			SettingUtils.disposables.push(watcher);
-			Logger.log("✅ Resource file monitoring setup completed");
+			Logger.info("Resource file monitoring setup completed");
 		} catch (error) {
-			Logger.log("❌ CRITICAL ERROR in readAndListenResourceFiles:", error);
+			Logger.showCriticalError("in readAndListenResourceFiles:", error);
 			throw error;
 		}
 	}
 
 	private async readAndListenCodeFiles() {
 		try {
-			Logger.log("💻 Finding resource references in code files...");
+			Logger.info("Finding resource references in code files...");
 			await this.findAllResourceReferencesFromCodeFiles();
 
-			Logger.log("👂 Setting up code file watchers...");
+			Logger.info("Setting up code file watchers...");
 			const watcher = vscode.workspace.createFileSystemWatcher("**/*.{ts,tsx,js,jsx}");
 			const watcherHandler = (type: string) => async (e: vscode.Uri) => {
 				try {
 					if (/^(.(?!.*node_modules))*\.(jsx?|tsx?)$/.test(e.fsPath)) {
 						const fileName = path.basename(e.fsPath);
-						Logger.log(`💻 Code file '${fileName}' was affected by '${type}' event`);
+						Logger.info(`Code file '${fileName}' was affected by '${type}' event`);
 
 						if (type === "delete") {
 							this.removeLocationsByUri(e);
@@ -304,7 +357,7 @@ export default class SettingUtils implements vscode.Disposable {
 						}
 					}
 				} catch (error) {
-					Logger.log(`❌ ERROR handling ${type} event for code file:`, error);
+					Logger.error(`ERROR handling ${type} event for code file:`, error);
 				}
 			};
 
@@ -313,80 +366,74 @@ export default class SettingUtils implements vscode.Disposable {
 			watcher.onDidDelete(watcherHandler("delete"), null, SettingUtils.disposables);
 
 			SettingUtils.disposables.push(watcher);
-			Logger.log("✅ Code file monitoring setup completed");
+			Logger.info("Code file monitoring setup completed");
 		} catch (error) {
-			Logger.log("❌ CRITICAL ERROR in readAndListenCodeFiles:", error);
+			Logger.showCriticalError("in readAndListenCodeFiles:", error);
 			throw error;
 		}
 	}
 
 	private async findAllResourceReferencesFromJson() {
 		try {
-			Logger.log(`🔍 Scanning ${this.languageResourcesFilesCache.length} resource files for references...`);
+			Logger.info(`Scanning ${this.languageResourcesFilesCache.length} resource files for references...`);
 			await Promise.all(this.languageResourcesFilesCache.map(res => this.updateLocationsFromResourceFile(res.uri)));
-			Logger.log("✅ Resource file reference scanning completed");
+			Logger.info("Resource file reference scanning completed");
 		} catch (error) {
-			Logger.log("❌ ERROR finding resource references from JSON:", error);
+			Logger.error("ERROR finding resource references from JSON:", error);
 			throw error;
 		}
 	}
 
 	private async findAllResourceReferencesFromCodeFiles() {
-		try {
-			Logger.log("🔍 Scanning code files for resource references...");
-			const files = await vscode.workspace.findFiles("**/*.{ts,tsx,js,jsx}", excludePattern);
-			Logger.log(`💻 Found ${files.length} code files to scan`);
-			await Promise.all(files.map(fileUri => this.updateLocationsFromCacheByCodeUri(fileUri)));
-			Logger.log("✅ Code file reference scanning completed");
-		} catch (error) {
-			Logger.log("❌ ERROR finding resource references from code files:", error);
-			throw error;
-		}
+		const allFiles = await vscode.workspace.findFiles("**/*.{ts,tsx,js,jsx}", excludePattern);
+		const root = vscode.workspace.workspaceFolders![0].uri.fsPath;
+
+		const codeFiles = allFiles.filter(uri => {
+			const rel = path.relative(root, uri.fsPath);
+			return !this.gitIgnore.ignores(rel);
+		});
+
+		await Promise.all(codeFiles.map(uri => this.updateLocationsFromCacheByCodeUri(uri)));
 	}
 
 	private async updateLocationsFromCacheByCodeUri(fileUri: vscode.Uri) {
 		try {
-			const file = await vscode.workspace.fs.readFile(fileUri);
-			const fileContent = file.toString();
-			const fileName = path.basename(fileUri.fsPath);
+			const text = (await vscode.workspace.fs.readFile(fileUri)).toString();
+			const lines = text.split(/\r?\n/);
+			const regex = SettingUtils.getResourceCodeRegex();
+			let totalFound = 0;
 
-			let lineNumber = 0;
-			const lines = fileContent.split(/\r?\n/);
-			let isAddedNewKey = false;
-			let keyCount = 0;
+			for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+				const line = lines[lineNumber];
+				let match: RegExpExecArray | null;
+				while ((match = regex.exec(line)) !== null) {
+					const key = match.groups?.key ?? match[0];
+					const start = match.index!;
+					const end = start + key.length;
 
-			for (const line of lines) {
-				const match = SettingUtils.getResourceCodeMatch(line);
-
-				if (match?.index !== undefined) {
-					const key = match[0];
-					const keyLength = key?.length || 0;
-
-					const location = new vscode.Location(fileUri,
+					const locs = this.resourceDefinitionLocations.get(key) || [];
+					locs.push(new vscode.Location(
+						fileUri,
 						new vscode.Range(
-							new vscode.Position(lineNumber, match.index),
-							new vscode.Position(lineNumber, match.index + keyLength)
+							new vscode.Position(lineNumber, start),
+							new vscode.Position(lineNumber, end)
 						)
-					);
-					const locationList = this.resourceDefinitionLocations.get(key) || [];
-					locationList.push(location);
-					this.resourceDefinitionLocations.set(key, locationList);
-					isAddedNewKey = true;
-					keyCount++;
+					));
+					this.resourceDefinitionLocations.set(key, locs);
+
+					totalFound++;
 				}
-				lineNumber++;
+				regex.lastIndex = 0;
 			}
 
-			if (keyCount > 0) {
-				Logger.log(`📝 Found ${keyCount} resource references in ${fileName}`);
+			if (totalFound) {
+				Logger.info(`Found ${totalFound} key(s) in ${path.basename(fileUri.fsPath)}.`);
+				if (this.initialLoadDone) {
+					SettingUtils.fireDebouncedOnDidChangeResourceLocations(this.resourceDefinitionLocations);
+				}
 			}
-
-			if (isAddedNewKey && this.initialLoadDone) {
-				SettingUtils.fireDebouncedOnDidChangeResourceLocations(this.resourceDefinitionLocations);
-			}
-		} catch (error) {
-			const fileName = path.basename(fileUri.fsPath);
-			Logger.log(`❌ ERROR updating locations from code file ${fileName}:`, error);
+		} catch (err) {
+			Logger.error(`Error parsing ${path.basename(fileUri.fsPath)}:`, err);
 		}
 	}
 
@@ -404,44 +451,72 @@ export default class SettingUtils implements vscode.Disposable {
 		}
 	}
 
-	private async updateLocationsFromResourceFile(fileUri: vscode.Uri) {
+	private async updateLocationsFromResourceFile(fileUri: vscode.Uri): Promise<void> {
+		const fileName = path.basename(fileUri.fsPath);
+		Logger.info(`Scanning JSON resource file: ${fileName}`);
+
 		try {
-			const file = await vscode.workspace.fs.readFile(fileUri);
-			const fileContent = file.toString();
-			const fileName = path.basename(fileUri.fsPath);
+			// 1. Read file contents as string
+			const fileBuffer = await vscode.workspace.fs.readFile(fileUri);
+			const text = fileBuffer.toString();
 
-			let lineNumber = 0;
-			const lines = fileContent.split(/\r?\n/);
-			let isAddedNewKey = false;
-			let keyCount = 0;
+			// 2. Split into lines for per-line regex matching
+			const lines = text.split(/\r?\n/);
 
-			for (const line of lines) {
-				const match = SettingUtils.getResourceLineMatch(line);
-				if (match?.groups?.key) {
-					const characterPosition = match?.index || 0;
-					const characterLength = match?.groups?.key?.length || 0;
-					const location = new vscode.Location(fileUri, new vscode.Range(new vscode.Position(lineNumber, characterPosition), new vscode.Position(lineNumber, characterPosition + characterLength)));
-					const locationList = this.resourceDefinitionLocations.get(match.groups.key) || [];
-					locationList.push(location);
-					this.resourceDefinitionLocations.set(match.groups.key, locationList);
-					isAddedNewKey = true;
-					keyCount++;
+			// 3. Obtain a fresh global regex with named group "key"
+			const regex = SettingUtils.getResourceLineRegex(); // assumed to be /(?<key>...)/g
+
+			let totalFound = 0;
+
+			// 4. Iterate each line and use exec loop to find all matches
+			for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+				const line = lines[lineNumber];
+				let match: RegExpExecArray | null;
+
+				// Loop until exec() returns null (no more matches in this line)
+				while ((match = regex.exec(line)) !== null) {
+					// Prefer named group "key", otherwise fallback to whole match
+					const key = match.groups?.key ?? match[0];
+					const startIndex = match.index!;
+					const endIndex = startIndex + key.length;
+
+					// Build a Location for this key occurrence
+					const location = new vscode.Location(
+						fileUri,
+						new vscode.Range(
+							new vscode.Position(lineNumber, startIndex),
+							new vscode.Position(lineNumber, endIndex)
+						)
+					);
+
+					// Append to our map of definitions
+					const existing = this.resourceDefinitionLocations.get(key) || [];
+					existing.push(location);
+					this.resourceDefinitionLocations.set(key, existing);
+
+					totalFound++;
 				}
-				lineNumber++;
+
+				// Reset lastIndex so the regex will start fresh on next line
+				regex.lastIndex = 0;
 			}
 
-			if (keyCount > 0) {
-				Logger.log(`📝 Found ${keyCount} resource definitions in ${fileName}`);
-			}
 
-			if (isAddedNewKey && this.initialLoadDone) {
-				SettingUtils.fireDebouncedOnDidChangeResourceLocations(this.resourceDefinitionLocations);
+			// 5. Summary log and event firing if any keys were found
+			if (totalFound > 0) {
+				Logger.info(`${fileName}: ${totalFound} total key(s) located`);
+				if (this.initialLoadDone) {
+					Logger.info(`Emitting onDidChangeResourceLocations event`);
+					SettingUtils.fireDebouncedOnDidChangeResourceLocations(this.resourceDefinitionLocations);
+				}
+			} else {
+				Logger.info(`${fileName}: no keys found`);
 			}
 		} catch (error) {
-			const fileName = path.basename(fileUri.fsPath);
-			Logger.log(`❌ ERROR updating locations from resource file ${fileName}:`, error);
+			Logger.error(`Error scanning ${fileName}:`, error);
 		}
 	}
+
 
 	// Static methods
 
@@ -453,6 +528,10 @@ export default class SettingUtils implements vscode.Disposable {
 		return this._instance.mm.match(path || "");
 	}
 	static isCodeFilePath(path: string): boolean {
+		const relativePath = vscode.workspace.asRelativePath(path);
+		if (this._instance.gitIgnore.ignores(relativePath)) {
+			return false;
+		}
 		const match = this._instance.codeFileRegex.exec(path);
 		this._instance.codeFileRegex.lastIndex = 0;
 		return !!match;
@@ -519,17 +598,17 @@ export default class SettingUtils implements vscode.Disposable {
 			const resourceKeys = new Set<string>();
 			const text = document.getText();
 			const resourceRegex = this.getResourceCodeRegex();
-			
+
 			let match;
 			while ((match = resourceRegex.exec(text)) !== null) {
 				if (match[0]) {
 					resourceKeys.add(match[0]);
 				}
 			}
-			
+
 			return Array.from(resourceKeys);
 		} catch (error) {
-			Logger.log("❌ ERROR in getAllResourceKeysFromDocument:", error);
+			Logger.error("ERROR in getAllResourceKeysFromDocument:", error);
 			return [];
 		}
 	}

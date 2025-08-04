@@ -5,17 +5,17 @@ import { Logger } from '../Utils';
 export class DecoratorProvider implements vscode.Disposable {
 	constructor() {
 		try {
-			Logger.log("🎨 Initializing DecoratorProvider...");
+			Logger.info("Initializing DecoratorProvider...");
 			this.initialize();
-			Logger.log("✅ DecoratorProvider initialized successfully");
+			Logger.info("DecoratorProvider initialized successfully");
 		} catch (error) {
-			Logger.log("❌ ERROR initializing DecoratorProvider:", error);
+			Logger.error("ERROR initializing DecoratorProvider:", error);
 			throw error;
 		}
 	}
 
 	private disposables: vscode.Disposable[] = [];
-	private timeout: NodeJS.Timer | undefined = undefined;
+	private timeout: number | undefined = undefined;
 	private activeEditor = vscode.window.activeTextEditor;
 	private resourceExistDecorationType = vscode.window.createTextEditorDecorationType({
 		light: {
@@ -23,7 +23,9 @@ export class DecoratorProvider implements vscode.Disposable {
 		},
 		dark: {
 			textDecoration: "underline #2add38"
-		}
+		},
+		overviewRulerColor: "#2add38",
+		overviewRulerLane: vscode.OverviewRulerLane.Right
 	});
 	private resourceNotFoundDecorationType = vscode.window.createTextEditorDecorationType({
 		light: {
@@ -31,7 +33,9 @@ export class DecoratorProvider implements vscode.Disposable {
 		},
 		dark: {
 			textDecoration: "underline #df3a3a"
-		}
+		},
+		overviewRulerColor: "#df3a3a",
+		overviewRulerLane: vscode.OverviewRulerLane.Right
 	});
 	private resourceWarnDecorationType = vscode.window.createTextEditorDecorationType({
 		light: {
@@ -39,10 +43,14 @@ export class DecoratorProvider implements vscode.Disposable {
 		},
 		dark: {
 			textDecoration: "underline #ffd91a"
-		}
+		},
+		overviewRulerColor: "#ffd91a",
+		overviewRulerLane: vscode.OverviewRulerLane.Right
 	});
 	private resourceNoReferenceDecorationType = vscode.window.createTextEditorDecorationType({
-		opacity: "0.5"
+		opacity: "0.5",
+		overviewRulerColor: "#888888",
+		overviewRulerLane: vscode.OverviewRulerLane.Right
 	});
 
 
@@ -94,7 +102,7 @@ export class DecoratorProvider implements vscode.Disposable {
 				this.updateDecorationForCode(activeEditor);
 			}
 		} catch (error) {
-			Logger.log("❌ ERROR in updateDecorations:", error);
+			Logger.error("ERROR in updateDecorations:", error);
 		}
 	}
 
@@ -150,7 +158,7 @@ export class DecoratorProvider implements vscode.Disposable {
 			textEditor.setDecorations(this.resourceNotFoundDecorationType, errorResources);
 			textEditor.setDecorations(this.resourceWarnDecorationType, warnResources);
 		} catch (error) {
-			Logger.log("❌ ERROR in updateDecorationForCode:", error);
+			Logger.error("ERROR in updateDecorationForCode:", error);
 		}
 	}
 
@@ -178,9 +186,8 @@ export class DecoratorProvider implements vscode.Disposable {
 
 			textEditor.setDecorations(this.resourceNoReferenceDecorationType, unusedResources);
 		} catch (error) {
-			Logger.log("❌ ERROR in updateDecorationForResource:", error);
+			Logger.error("ERROR in updateDecorationForResource:", error);
 		}
 	}
 
 }
-

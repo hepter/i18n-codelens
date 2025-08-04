@@ -1,4 +1,3 @@
-
 import * as vscode from 'vscode';
 import ActionAddLanguageResource from './actions/ActionAddLanguageResource';
 import ActionDeleteLanguageResource from './actions/ActionDeleteLanguageResource';
@@ -23,14 +22,14 @@ let disposables: vscode.Disposable[] = [];
 
 export async function activate(context: vscode.ExtensionContext) {
     try {
-        Logger.log("🚀 Starting i18n CodeLens extension activation...");
+        Logger.info("Starting i18n CodeLens extension activation...");
 
         const settingUtil = SettingUtils.getInstance();
 
-        Logger.log("👂 Setting up event listeners...");
+        Logger.info("Setting up event listeners...");
         SettingUtils.onDidLoad((instanceDisposables) => {
             try {
-                Logger.log("🔌 Registering providers and commands...");
+                Logger.info("Registering providers and commands...");
                 const id = instanceDisposables;
 
                 // Register providers
@@ -55,29 +54,29 @@ export async function activate(context: vscode.ExtensionContext) {
 						try {
 							sourceDocument = await vscode.workspace.openTextDocument(vscode.Uri.parse(documentUri));
 						} catch (error) {
-							Logger.log("⚠️ Could not open source document:", error);
+							Logger.warn("Could not open source document:", error);
 						}
 					}
 					return ActionBulkEditResources(keys, sourceDocument);
 				}));                // Initialize tree view
                 new ResourceTreeView(id);
 
-                Logger.log("✅ Providers and commands registered successfully");
+                Logger.info("Providers and commands registered successfully");
             } catch (error) {
-                Logger.log("❌ ERROR registering providers and commands:", error);
+                Logger.error("ERROR registering providers and commands:", error);
                 vscode.window.showErrorMessage(`Failed to register extension components: ${error instanceof Error ? error.message : String(error)}`);
             }
         }, null, disposables);
 
-        Logger.log("⚙️ Starting initialization...");
+        Logger.info("Starting initialization...");
         await settingUtil.initialize();
 
         disposables.push(settingUtil);
         context.subscriptions.push(...disposables);
 
-        Logger.log(`🎉 ${extensionName} extension activated successfully!`);
+        Logger.info(`${extensionName} extension activated successfully!`);
     } catch (error) {
-        Logger.log("❌ CRITICAL ERROR during extension activation:", error);
+        Logger.showCriticalError("during extension activation:", error);
         vscode.window.showErrorMessage(
             `i18n CodeLens failed to activate: ${error instanceof Error ? error.message : String(error)}. Check output panel for details.`
         );
@@ -86,19 +85,19 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
     try {
-        Logger.log("🔌 Deactivating i18n CodeLens extension...");
+        Logger.info("Deactivating i18n CodeLens extension...");
         if (disposables) {
             disposables.forEach(item => {
                 try {
                     item.dispose();
                 } catch (error) {
-                    Logger.log("⚠️ ERROR disposing resource:", error);
+                    Logger.warn("ERROR disposing resource:", error);
                 }
             });
         }
         disposables = [];
-        Logger.log("✅ i18n CodeLens extension deactivated successfully");
+        Logger.info("i18n CodeLens extension deactivated successfully");
     } catch (error) {
-        Logger.log("❌ ERROR during extension deactivation:", error);
+        Logger.error("ERROR during extension deactivation:", error);
     }
 }

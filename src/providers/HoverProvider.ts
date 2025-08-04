@@ -4,134 +4,118 @@ import { Logger } from '../Utils';
 import { actions } from '../constants';
 
 export class HoverProvider implements vscode.HoverProvider {
-	provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken) {
+	provideHover(
+		document: vscode.TextDocument,
+		position: vscode.Position,
+		token: vscode.CancellationToken
+	): vscode.ProviderResult<vscode.Hover> {
 		try {
-			const keyRange = document.getWordRangeAtPosition(position, SettingUtils.getResourceLineRegex());		
-			const key = document.getText(keyRange);
+
+			let keyRange;
+			if (SettingUtils.isResourceFilePath(document.uri.fsPath)) {
+				keyRange = document.getWordRangeAtPosition(position, SettingUtils.getResourceLineRegex());
+			} else {
+				keyRange = document.getWordRangeAtPosition(position, SettingUtils.getResourceCodeRegex());
+			}
+
+
+			const key = keyRange && document.getText(keyRange);
 			if (!key) return;
 
-			if (SettingUtils.isResourceFilePath(document.uri.path)) {
-				return this.hoverForResource(key);
-			} else if (SettingUtils.isCodeFilePath(document.uri.path)) {
-				return this.hoverForCode(key);
-			}
-		} catch (error) {
-			Logger.log("❌ ERROR in provideHover:", error);
-			return undefined;
+			return this.buildHover(key);
+		} catch (err) {
+			Logger.error('ERROR in provideHover:', err);
 		}
+		return;
 	}
 
-	private hoverForResource(key: string) {
-		try {
-			const locations = SettingUtils.getResourceLocationsByKey(key);
-			const codeLocations = locations?.filter(location => SettingUtils.isCodeFilePath(location.uri.fsPath));
-			
-			const resources = SettingUtils.getResources();
-			const missingResourceFileNames = [];
-			const existingResourceFileNames = [];
-
-			for (const resource of resources) {
-				if (resource.keyValuePairs[key]) {
-					existingResourceFileNames.push(resource.fileName);
-				} else {
-					missingResourceFileNames.push(resource.fileName);
-				}
-			}
-
-			if (!codeLocations?.length) {
-				const hoverText = new vscode.MarkdownString();
-				hoverText.isTrusted = true;
-				hoverText.appendMarkdown(`The **'${key}'** resource key has no reference in any file. \n\n`);
-				
-				if (missingResourceFileNames.length > 0) {
-					hoverText.appendMarkdown(`[Edit/Add Translations](command:${actions.addResource}?${encodeURIComponent(JSON.stringify([key, missingResourceFileNames]))}) \n\n`);
-					hoverText.appendMarkdown(`Missing translations: ${missingResourceFileNames.join(', ')} \n\n`);
-				} else {
-					hoverText.appendMarkdown(`[Edit Translations](command:${actions.editResource}?${encodeURIComponent(JSON.stringify([key]))}) \n\n`);
-				}
-				
-				if (existingResourceFileNames.length > 0) {
-					hoverText.appendMarkdown(`[Delete Translations](command:${actions.deleteResource}?${encodeURIComponent(JSON.stringify([key]))}) \n\n`);
-				}
-
-				// Add Bulk Edit button for resource files - get all keys from current document
-				const activeEditor = vscode.window.activeTextEditor;
-				if (activeEditor && SettingUtils.isResourceFilePath(activeEditor.document.uri.fsPath)) {
-					const text = activeEditor.document.getText();
-					const lines = text.split(/\r?\n/);
-					const allKeys = [];
-					for (const line of lines) {
-						const match = SettingUtils.getResourceLineMatch(line);
-						if (match?.groups?.key) {
-							allKeys.push(match.groups.key);
-						}
-					}
-					if (allKeys.length > 1) {
-						hoverText.appendMarkdown(`---\n\n`);
-						hoverText.appendMarkdown(`[📋 Bulk Edit (${allKeys.length} keys)](command:${actions.bulkEditResources}?${encodeURIComponent(JSON.stringify([allKeys, activeEditor.document.uri.toString()]))})`);
-					}
-				}
-				
-				hoverText.appendMarkdown(`\n\nDelete the resource key if you don't need it\n\n\n`);
-				hoverText.appendMarkdown(`- Note: It may still be used as dynamically, so please try to check before deleting`);
-				return new vscode.Hover(hoverText);
-			}
-		} catch (error) {
-			Logger.log("❌ ERROR in hoverForResource:", error);
-			return undefined;
-		}
-	}
-
-	private hoverForCode(key: string) {
+	private buildHover(key: string): vscode.Hover | undefined {
 		try {
 			const resources = SettingUtils.getResources();
-			let hasMatch = false;
-			const hoverText: vscode.MarkdownString = new vscode.MarkdownString();
-			hoverText.isTrusted = true;
+			const existingFiles: string[] = [];
+			const missingFiles: string[] = [];
 
-			const missingResourceFileNames = [];
-			const existingResourceFileNames = [];
-
-			for (const resource of resources) {
-				if (resource.keyValuePairs[key]) {
-					if (!hasMatch) {
-						hoverText.appendMarkdown(`**KEY**: ${key}  \n\n`);
-					}
-					hoverText.appendMarkdown(`- **${resource.fileName}**: ${resource.keyValuePairs[key]}  \n\n`);
-					hasMatch = true;
-					existingResourceFileNames.push(resource.fileName);
+			for (const res of resources) {
+				if (res.keyValuePairs[key]) {
+					existingFiles.push(res.fileName);
 				} else {
-					missingResourceFileNames.push(resource.fileName);
+					missingFiles.push(res.fileName);
 				}
 			}
 
-			if (hasMatch) {
-				if (missingResourceFileNames.length > 0) {
-					hoverText.appendMarkdown(`[Edit/Add Translations](command:${actions.addResource}?${encodeURIComponent(JSON.stringify([key, missingResourceFileNames]))}) \n\n`);
-					hoverText.appendMarkdown(`Missing translations: ${missingResourceFileNames.join(', ')} \n\n`);
+			const md = new vscode.MarkdownString('');
+			md.isTrusted = true;
+
+			// Title and key
+			md.appendMarkdown(`### **🔑 ${key}**  \n`);
+
+			// One line per file/language
+			for (const res of resources) {
+				const text = res.keyValuePairs[key];
+				if (text) {
+					md.appendMarkdown(
+						`**${res.fileName}**: ${text} [✏️](command:${actions.editResource}?${encodeURIComponent(
+							JSON.stringify([key, [res.fileName]])
+						)})  \n`
+					);
 				} else {
-					hoverText.appendMarkdown(`[Edit Translations](command:${actions.editResource}?${encodeURIComponent(JSON.stringify([key]))}) \n\n`);
+					md.appendMarkdown(
+						`**${res.fileName}**: ❌ [add](command:${actions.addResource}?${encodeURIComponent(
+							JSON.stringify([key, [res.fileName]])
+						)})  \n`
+					);
 				}
-				hoverText.appendMarkdown(`[Delete Translations](command:${actions.deleteResource}?${encodeURIComponent(JSON.stringify([key]))}) \n\n`);
+			}
+
+			// Bottom actions
+			const bottom: string[] = [];
+			if (existingFiles.length === 0) {
+				bottom.push(
+					`[Add All](command:${actions.addResource}?${encodeURIComponent(
+						JSON.stringify([key, missingFiles])
+					)})`
+				);
 			} else {
-				hoverText.appendMarkdown("**Language definition not found!**");
-				hoverText.appendMarkdown(`\n\n[Add Translations](command:${actions.addResource}?${encodeURIComponent(JSON.stringify([key]))}) \n\n`);
+				if (missingFiles.length > 0) {
+					bottom.push(
+						`[Add missing](command:${actions.addResource}?${encodeURIComponent(
+							JSON.stringify([key, missingFiles])
+						)})`
+					);
+				}
+				bottom.push(
+					`[Edit](command:${actions.editResource}?${encodeURIComponent(
+						JSON.stringify([key, existingFiles])
+					)})`
+				);
+				bottom.push(
+					`[Delete](command:${actions.deleteResource}?${encodeURIComponent(
+						JSON.stringify([key])
+					)})`
+				);
 			}
+			md.appendMarkdown(`\n${bottom.join(' | ')}  \n`);
 
-			// Add Bulk Edit button - get all keys from current document
-			const activeEditor = vscode.window.activeTextEditor;
-			if (activeEditor) {
-				const allKeys = SettingUtils.getAllResourceKeysFromDocument(activeEditor.document);
+			// Bulk edit always at bottom
+			const editor = vscode.window.activeTextEditor;
+			if (editor) {
+				const allKeys = SettingUtils.getAllResourceKeysFromDocument(
+					editor.document
+				);
 				if (allKeys.length > 1) {
-					hoverText.appendMarkdown(`---\n\n`);
-					hoverText.appendMarkdown(`[📋 Bulk Edit (${allKeys.length} keys)](command:${actions.bulkEditResources}?${encodeURIComponent(JSON.stringify([allKeys, activeEditor.document.uri.toString()]))})`);
+					md.appendMarkdown(`\n---\n`);
+					md.appendMarkdown(
+						`[Bulk edit (${allKeys.length})](command:${actions.bulkEditResources}?${encodeURIComponent(
+							JSON.stringify([allKeys, editor.document.uri.toString()])
+						)})`
+					);
 				}
 			}
 
-			return new vscode.Hover(hoverText);
-		} catch (error) {
-			Logger.log("❌ ERROR in hoverForCode:", error);
-			return undefined;
+			return new vscode.Hover(md);
+		} catch (err) {
+			Logger.error('ERROR in buildHover:', err);
+			return;
 		}
 	}
 }

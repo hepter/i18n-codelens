@@ -7,7 +7,7 @@ import { Logger } from '../Utils';
 export class ResourceTreeView {
 	constructor(disposables: vscode.Disposable[]) {
 		try {
-			Logger.log("🌳 Initializing ResourceTreeView...");
+			Logger.info("Initializing ResourceTreeView...");
 			
 			const viewRef: { ref: vscode.TreeView<ResourceTreeItem> | null } = { ref: null };
 
@@ -36,7 +36,7 @@ export class ResourceTreeView {
 						await view.reveal(matchedTreeItem, { select: true, focus: true });
 					}
 				} catch (error) {
-					Logger.log("❌ ERROR in revealResource command:", error);
+					Logger.error("ERROR in revealResource command:", error);
 				}
 			}));
 
@@ -60,13 +60,13 @@ export class ResourceTreeView {
 						}
 					}
 				} catch (error) {
-					Logger.log("❌ ERROR in text editor selection change:", error);
+					Logger.error("ERROR in text editor selection change:", error);
 				}
 			}));
 
-			Logger.log("✅ ResourceTreeView initialized successfully");
+			Logger.info("ResourceTreeView initialized successfully");
 		} catch (error) {
-			Logger.log("❌ ERROR initializing ResourceTreeView:", error);
+			Logger.error("ERROR initializing ResourceTreeView:", error);
 			throw error;
 		}
 	}

@@ -2,7 +2,7 @@
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
     "description": "Advanced i18n CodeLens with bulk translation editing, interactive hover actions, and comprehensive language resource management for JavaScript, TypeScript, and React projects.",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -97,7 +97,19 @@
                     "type": "string",
                     "description": "Regular expression pattern to identify resource keys for hover information and CodeLenses. The default pattern matches: t('key'), T('key'), or keys preceded by /** @i18n */ comment.",
                     "editPresentation": "singlelineText",
-                    "default": "(?<=\\/\\*\\*\\s*?@i18n\\s*?\\*\\/\\s*?[\"']|[tT]\\(\\s*[\"'])(?<key>[A-Za-z0-9 .-]+?)(?=[\"'])"
+                    "default": "(?<=\\/\\*\\*\\s*?@i18n\\s*?\\*\\/\\s*?[\"']|\\W[tT]\\(\\s*[\"'])(?<key>[A-Za-z0-9 .-]+?)(?=[\"'])"
+                },
+                "i18n-codelens.logLevel": {
+                    "type": "string",
+                    "enum": [
+                        "debug",
+                        "info",
+                        "warn",
+                        "error",
+                        "off"
+                    ],
+                    "default": "warn",
+                    "description": "Controls the log level of the i18n CodeLens extension. Set to 'debug' for more verbose logs."
                 }
             }
         }
@@ -121,7 +133,8 @@
         "vsce": "^2.5.1"
     },
     "dependencies": {
-        "fastest-levenshtein": "^1.0.12",
+        "fastest-levenshtein": "^1.0.16",
+        "ignore": "^7.0.5",
         "lodash": "^4.17.21",
         "minimatch": "^5.0.1"
     }

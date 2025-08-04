@@ -46,6 +46,22 @@ It can be made to work in various projects by changing the regex information and
 
 ## Change Log
 
+##### v1.1.1
+- **Enhanced**: Logger system with structured log levels (debug, info, warn, error) and configurable `logLevel` setting
+- **Added**: New `codeFileRegex` setting for customizable code file pattern matching (default: `/\.(jsx?|tsx?)$/`)
+- **Added**: `.gitignore` integration for file filtering during workspace scanning
+- **Improved**: Resource scanning performance with optimized regex handling and execution patterns
+- **Improved**: Code file detection with proper filtering of ignored files and relative path handling
+- **Enhanced**: Input dialogs with VS Code InputBox API, step progress indicators, and validation feedback
+- **Enhanced**: Hover provider with improved layout, inline edit actions, and action links
+- **Enhanced**: Error handling with proper categorization and user-friendly error messages
+- **Fixed**: Type error in `ResourceTreeViewProvider.ts` related to range character access
+- **Fixed**: Function closure issue in `ActionResetAndReloadExtension.ts` error handling
+- **Fixed**: Code action provider regex matching to use appropriate code detection pattern
+- **Fixed**: Resource line regex execution with proper global flag handling
+- **Updated**: Dependencies - `fastest-levenshtein` to v1.0.16 and added `ignore` v7.0.5
+- **Updated**: TypeScript configuration to ES2020 target with enhanced module resolution
+
 ##### v1.1.0
 - **Major Feature**: Added comprehensive bulk translation editing system with WebView interface
 - **Enhanced**: Hover provider with interactive edit/add/delete action links  
@@ -109,7 +125,13 @@ Performance tweaks & refactored with new features
 - Language file glob patterns (Language resource files must be key value object files). Default: `**/locales/**/*.json`
 
 #### `resourceCodeDetectionRegex`
-- Regular expression pattern to identify resource keys for hover information and CodeLenses. The default pattern matches: `t('key')`, `T('key')`, or keys preceded by `/** @i18n */` comment. Default: `(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["'])`
+- Regular expression pattern to identify resource keys for hover information and CodeLenses. The default pattern matches: `t('key')`, `T('key')`, or keys preceded by `/** @i18n */` comment. Default: `(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["'])`
+
+### `codeFileRegex`
+- Regular expression pattern to identify code files for translation keys. Default: `/\.(jsx?|tsx?)$/`
+
+#### `logLevel`
+- Controls the log level of the i18n CodeLens extension. Set to 'debug' for more verbose logs. Default: `warn`
 
 ## 📖 Usage Examples
 
