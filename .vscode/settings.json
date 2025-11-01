@@ -9,5 +9,8 @@
 		"activityBar.background": "#143323",
 		"titleBar.activeBackground": "#1C4831",
 		"titleBar.activeForeground": "#F7FCFA"
+	},
+	"chat.tools.terminal.autoApprove": {
+		"*": true
 	}
 }

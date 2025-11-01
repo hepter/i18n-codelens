@@ -4,6 +4,7 @@ export const settings = {
 	codeLens: "codeLens",
 	autoSave: "resourceAutoSave",
 	underlineDecorator: "underlineCodeDecorator",
+	overviewRulerMarkers: "overviewRulerMarkers",
 	autoFocus: "autoFocusAfterModified",
 	globPattern: "resourceFilesGlobPattern",
 	resourceRegex: "resourceCodeDetectionRegex",

@@ -2,82 +2,134 @@ import { closest } from 'fastest-levenshtein';
 import * as vscode from "vscode";
 import SettingUtils from './SettingUtils';
 import { extensionName, settings } from './constants';
+import { setNestedValue } from './shared/resourceUtils';
 
 async function applyEditByFileUri(fileUri: vscode.Uri, nearestResourceKey: string, resourceKey: string, resourceData: string, isUpdate?: boolean): Promise<void> {
 	try {
-		const rawData = (await vscode.workspace.fs.readFile(fileUri)).toString();
+	const rawData = (await vscode.workspace.fs.readFile(fileUri)).toString();
+	const jsonData = JSON.parse(rawData) as Record<string, unknown>;
 
-		const lineRegex = /([\t ]*?)(["']).*?(,?)(\r?\n)/;// 4 RegExp groups
-		const resourceLineRegex = new RegExp(`(?<=["'])${nearestResourceKey}(?=["']).*\r?(?:\n|$)`);
-		const matchGroups = rawData.match(lineRegex);
+		// Check if the resource file structure is nested or flat
+		const resources = SettingUtils.getResources();
+		const currentResource = resources.find(r => r.uri.fsPath === fileUri.fsPath);
+		const isNested = currentResource?.isNested || false;
 
-		let newLine = `\n  "${resourceKey}": "${resourceData}",`;
-		if (matchGroups?.length == 5) { // 4 groups + 1 for the whole match
-			const space = matchGroups[1];
-			const quote = matchGroups[2];
-			const comma = matchGroups[3];
-			const newLineChar = matchGroups[4];
-
-			newLine = `${newLineChar}${space}${quote}${resourceKey}${quote}: ${quote}${resourceData}${quote}${comma}`;
-		}
-
-		let positionLine = 0;
-		let positionOffset = 0;
-
-		let lineCounter = 0;
-		const lines = rawData.split(/\r?\n/);
-		for (const line of lines) {
-			const matchNearestLine = resourceLineRegex.exec(line);
-			if (matchNearestLine) {
-				positionLine = lineCounter;
-				positionOffset = line.length;
-				break;
-			}
-			lineCounter++;
-		}
-
-		const workspaceEdit = new vscode.WorkspaceEdit();
-
-		if (isUpdate) {
-			workspaceEdit.replace(fileUri,
-				new vscode.Range(
-					new vscode.Position(positionLine, 0),
-					new vscode.Position(positionLine, positionOffset)
-				),
-				newLine.replace(/\r?\n/g, ''));
+		if (isNested) {
+			// Handle nested structure
+			await applyEditToNestedStructure(fileUri, jsonData, resourceKey, resourceData, isUpdate);
 		} else {
-			workspaceEdit.insert(fileUri, new vscode.Position(positionLine, positionOffset), newLine);
-		}
-
-		let dispose;
-		if (SettingUtils.isEnabledAutoSave()) {
-			dispose = vscode.workspace.onDidChangeTextDocument(e => {
-				e.document.save();
-			});
-		}
-
-		await vscode.workspace.applyEdit(workspaceEdit);
-		dispose?.dispose();
-
-		if (!isUpdate) {
-			positionLine++; // Current line is increased by 1
-		}
-
-		if (SettingUtils.isEnabledAutoFocus()) {
-			const document = await vscode.window.showTextDocument(fileUri, {
-				preserveFocus: true,
-				preview: false,
-			});
-
-			const newLinePosition = new vscode.Position(positionLine, 0);
-			const newLinePositionEnd = new vscode.Position(positionLine, newLine.length);
-			document.revealRange(new vscode.Range(newLinePosition, newLinePositionEnd), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-			document.selection = new vscode.Selection(newLinePosition, newLinePositionEnd);
+			// Handle flat structure (original logic)
+			await applyEditToFlatStructure(fileUri, rawData, nearestResourceKey, resourceKey, resourceData, isUpdate);
 		}
 	} catch (error) {
 		const fileName = vscode.workspace.asRelativePath(fileUri);
 		Logger.error(`ERROR applying edit to file ${fileName}:`, error);
 		throw error;
+	}
+}
+
+async function applyEditToFlatStructure(fileUri: vscode.Uri, rawData: string, nearestResourceKey: string, resourceKey: string, resourceData: string, isUpdate?: boolean): Promise<void> {
+	const lineRegex = /([\t ]*?)(["']).*?(,?)(\r?\n)/;// 4 RegExp groups
+	const resourceLineRegex = new RegExp(`(?<=["'])${nearestResourceKey}(?=["']).*\r?(?:\n|$)`);
+	const matchGroups = rawData.match(lineRegex);
+
+	let newLine = `\n  "${resourceKey}": "${resourceData}",`;
+	if (matchGroups?.length == 5) { // 4 groups + 1 for the whole match
+		const space = matchGroups[1];
+		const quote = matchGroups[2];
+		const comma = matchGroups[3];
+		const newLineChar = matchGroups[4];
+
+		newLine = `${newLineChar}${space}${quote}${resourceKey}${quote}: ${quote}${resourceData}${quote}${comma}`;
+	}
+
+	let positionLine = 0;
+	let positionOffset = 0;
+
+	let lineCounter = 0;
+	const lines = rawData.split(/\r?\n/);
+	for (const line of lines) {
+		const matchNearestLine = resourceLineRegex.exec(line);
+		if (matchNearestLine) {
+			positionLine = lineCounter;
+			positionOffset = line.length;
+			break;
+		}
+		lineCounter++;
+	}
+
+	const workspaceEdit = new vscode.WorkspaceEdit();
+
+	if (isUpdate) {
+		workspaceEdit.replace(fileUri,
+			new vscode.Range(
+				new vscode.Position(positionLine, 0),
+				new vscode.Position(positionLine, positionOffset)
+			),
+			newLine.replace(/\r?\n/g, ''));
+	} else {
+		workspaceEdit.insert(fileUri, new vscode.Position(positionLine, positionOffset), newLine);
+	}
+
+	let dispose;
+	if (SettingUtils.isEnabledAutoSave()) {
+		dispose = vscode.workspace.onDidChangeTextDocument(e => {
+			e.document.save();
+		});
+	}
+
+	await vscode.workspace.applyEdit(workspaceEdit);
+	dispose?.dispose();
+
+	if (!isUpdate) {
+		positionLine++; // Current line is increased by 1
+	}
+
+	if (SettingUtils.isEnabledAutoFocus()) {
+		const document = await vscode.window.showTextDocument(fileUri, {
+			preserveFocus: true,
+			preview: false,
+		});
+
+		const newLinePosition = new vscode.Position(positionLine, 0);
+		const newLinePositionEnd = new vscode.Position(positionLine, newLine.length);
+		document.revealRange(new vscode.Range(newLinePosition, newLinePositionEnd), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+		document.selection = new vscode.Selection(newLinePosition, newLinePositionEnd);
+	}
+}
+
+async function applyEditToNestedStructure(fileUri: vscode.Uri, jsonData: Record<string, unknown>, resourceKey: string, resourceData: string, isUpdate?: boolean): Promise<void> {
+	// Set or update the nested value
+	setNestedValue(jsonData, resourceKey, resourceData);
+
+	// Convert back to formatted JSON
+	const newContent = JSON.stringify(jsonData, null, 2) + '\n';
+
+	const workspaceEdit = new vscode.WorkspaceEdit();
+	workspaceEdit.replace(
+		fileUri,
+		new vscode.Range(
+			new vscode.Position(0, 0),
+			new vscode.Position(Number.MAX_SAFE_INTEGER, 0)
+		),
+		newContent
+	);
+
+	let dispose;
+	if (SettingUtils.isEnabledAutoSave()) {
+		dispose = vscode.workspace.onDidChangeTextDocument(e => {
+			e.document.save();
+		});
+	}
+
+	await vscode.workspace.applyEdit(workspaceEdit);
+	dispose?.dispose();
+
+	if (SettingUtils.isEnabledAutoFocus()) {
+		await vscode.window.showTextDocument(fileUri, {
+			preserveFocus: true,
+			preview: false,
+		});
 	}
 }
 

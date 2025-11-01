@@ -1,8 +1,8 @@
 {
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
-    "description": "Advanced i18n CodeLens with bulk translation editing, interactive hover actions, and comprehensive language resource management for JavaScript, TypeScript, and React projects.",
-    "version": "1.1.1",
+    "description": "Advanced i18n CodeLens with bulk translation editing, interactive hover actions, MCP automation tools, and comprehensive language resource management for JavaScript, TypeScript, and React projects.",
+    "version": "1.2.0",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -11,10 +11,18 @@
     "private": true,
     "icon": "images/logo.png",
     "engines": {
-        "vscode": "^1.26.0"
+        "vscode": "^1.105.0"
     },
     "categories": [
-        "Other"
+        "Other",
+        "AI"
+    ],
+    "keywords": [
+        "i18n",
+        "localization",
+        "translation",
+        "mcp",
+        "copilot"
     ],
     "repository": {
         "type": "git",
@@ -29,6 +37,12 @@
     ],
     "main": "./out/extension",
     "contributes": {
+        "mcpServerDefinitionProviders": [
+            {
+                "id": "i18n-codelens.mcp",
+                "label": "i18n-codelens"
+            }
+        ],
         "views": {
             "explorer": [
                 {
@@ -71,6 +85,11 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Enable or disable the underline decorator for missing resource code(s)."
+                },
+                "i18n-codelens.overviewRulerMarkers": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable or disable the colored markers on the scroll bar for translation keys."
                 },
                 "i18n-codelens.autoFocusAfterModified": {
                     "type": "boolean",
@@ -119,23 +138,27 @@
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
         "lint": "eslint . --ext .ts,.tsx",
-        "watch": "tsc -watch -p ./"
+        "watch": "tsc -watch -p ./",
+        "mcp": "node ./out/mcp/server.js"
     },
     "devDependencies": {
         "@types/lodash": "^4.14.180",
         "@types/minimatch": "^3.0.5",
-        "@types/node": "^12.12.0",
-        "@types/vscode": "^1.26.0",
-        "@typescript-eslint/eslint-plugin": "^4.16.0",
-        "@typescript-eslint/parser": "^4.16.0",
-        "eslint": "^7.21.0",
-        "typescript": "^4.4.3",
-        "vsce": "^2.5.1"
+        "@types/node": "^12.20.55",
+        "@types/vscode": "^1.105.0",
+        "@typescript-eslint/eslint-plugin": "^4.33.0",
+        "@typescript-eslint/parser": "^4.33.0",
+        "eslint": "^7.32.0",
+        "typescript": "^5.9.3",
+        "vsce": "^2.15.0"
     },
     "dependencies": {
         "fastest-levenshtein": "^1.0.16",
         "ignore": "^7.0.5",
         "lodash": "^4.17.21",
-        "minimatch": "^5.0.1"
+        "minimatch": "^5.1.6",
+        "@modelcontextprotocol/sdk": "^1.20.2",
+        "zod": "^3.25.76",
+        "fast-glob": "^3.3.2"
     }
 }

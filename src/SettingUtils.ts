@@ -6,13 +6,15 @@ import * as fs from 'fs';
 import ignore from 'ignore';
 import { extensionName, settings } from './constants';
 import { Logger } from './Utils';
+import { FlatResourceMap, flattenObject, isObjectNested, unflattenObject } from './shared/resourceUtils';
 
 const excludePattern = "**/node_modules/**";
 
 export type ResourceItem = {
 	uri: vscode.Uri,
 	fileName: string
-	keyValuePairs: { [key: string]: string }
+	keyValuePairs: FlatResourceMap
+	isNested?: boolean
 };
 
 export default class SettingUtils implements vscode.Disposable {
@@ -31,9 +33,14 @@ export default class SettingUtils implements vscode.Disposable {
 	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\- _.]+?)(?=["'])/g;
 	private codeFileRegex = /^(.(?!.*node_modules))*\.(jsx?|tsx?)$/;
 	private gitIgnore!: ignore.Ignore;
+	private resourceStructureType: 'flat' | 'nested' = 'flat';
 
-	public static readonly fireDebouncedOnDidChangeResourceLocations = debounce((...args) => SettingUtils._onDidChangeResourceLocations.fire(...args), 500);
-	public static readonly fireDebouncedOnDidChangeResource = debounce((...args) => SettingUtils._onDidChangeResource.fire(...args), 500);
+	public static readonly fireDebouncedOnDidChangeResourceLocations = debounce((value: Map<string, vscode.Location[]>) => {
+		SettingUtils._onDidChangeResourceLocations.fire(value);
+	}, 500);
+	public static readonly fireDebouncedOnDidChangeResource = debounce((value: ResourceItem[]) => {
+		SettingUtils._onDidChangeResource.fire(value);
+	}, 500);
 
 
 	public static readonly onDidChangeResourceLocations = this._onDidChangeResourceLocations.event;
@@ -205,12 +212,27 @@ export default class SettingUtils implements vscode.Disposable {
 			const vscodeUriList = await vscode.workspace.findFiles(this.globPattern, excludePattern);
 			Logger.info(`Found ${vscodeUriList.length} resource files`);
 
+			if (vscodeUriList.length > 0) {
+				vscodeUriList.sort((a, b) => {
+					const aName = path.parse(a.fsPath).name.toLowerCase();
+					const bName = path.parse(b.fsPath).name.toLowerCase();
+					return aName.localeCompare(bName);
+				});
+			}
+
 			if (noCache) {
 				Logger.info("Clearing resource cache");
 				this.languageResourcesFilesCache = [];
 			}
 
 			await Promise.all(vscodeUriList.map(uri => this.insertOrUpdateResourceByUri(uri)));
+
+			// Detect structure type after processing all files
+			if (this.languageResourcesFilesCache.length > 0) {
+				this.resourceStructureType = this.detectResourceStructure(this.languageResourcesFilesCache);
+				Logger.info(`Detected resource structure type: ${this.resourceStructureType}`);
+			}
+
 			Logger.info(`Successfully processed ${vscodeUriList.length} resource files`);
 		} catch (error) {
 			Logger.error("ERROR refreshing resources from files:", error);
@@ -231,28 +253,35 @@ export default class SettingUtils implements vscode.Disposable {
 			Logger.info(`Processing resource file: ${filePath.name}`);
 
 			const data = (await vscode.workspace.fs.readFile(fileUri)).toString();
-			const keyValuePairs = JSON.parse(data);
+			const rawData = JSON.parse(data);
 
-			if (!keyValuePairs || typeof keyValuePairs !== 'object') {
+			if (!rawData || typeof rawData !== 'object') {
 				const errorMsg = `${filePath.name} is not a valid JSON object and will be ignored!`;
 				Logger.warn(`${errorMsg}`);
 				vscode.window.showWarningMessage(errorMsg);
 				return;
 			}
 
+			// Normalize and flatten the data
+			const keyValuePairs = this.normalizeResourceData(rawData);
 			const keyCount = Object.keys(keyValuePairs).length;
 			Logger.info(`Found ${keyCount} translation keys in ${filePath.name}`);
+
+			// Detect if this specific file is nested
+			const isNested = isObjectNested(rawData);
 
 			const newResource: ResourceItem = ({
 				uri: fileUri,
 				fileName: filePath.name,
-				keyValuePairs
+				keyValuePairs,
+				isNested
 			});
 
 			const matchedResource = this.languageResourcesFilesCache.find(res => res.uri.fsPath === newResource.uri.fsPath);
 			if (matchedResource) {
 				Logger.info(`Updating existing resource: ${filePath.name}`);
 				matchedResource.keyValuePairs = newResource.keyValuePairs;
+				matchedResource.isNested = newResource.isNested;
 			} else {
 				Logger.info(`Adding new resource: ${filePath.name}`);
 				this.languageResourcesFilesCache.push(newResource);
@@ -386,9 +415,11 @@ export default class SettingUtils implements vscode.Disposable {
 
 	private async findAllResourceReferencesFromCodeFiles() {
 		const allFiles = await vscode.workspace.findFiles("**/*.{ts,tsx,js,jsx}", excludePattern);
-		const root = vscode.workspace.workspaceFolders![0].uri.fsPath;
+		const folders = vscode.workspace.workspaceFolders;
+		const root = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
 
 		const codeFiles = allFiles.filter(uri => {
+			if (!root) return true; // No workspace root; skip .gitignore relative checks
 			const rel = path.relative(root, uri.fsPath);
 			return !this.gitIgnore.ignores(rel);
 		});
@@ -460,47 +491,52 @@ export default class SettingUtils implements vscode.Disposable {
 			const fileBuffer = await vscode.workspace.fs.readFile(fileUri);
 			const text = fileBuffer.toString();
 
+			// Check if this is a nested JSON file
+			const resourceItem = this.languageResourcesFilesCache.find(r => r.uri.fsPath === fileUri.fsPath);
+			const isNestedFile = resourceItem?.isNested || false;
+
 			// 2. Split into lines for per-line regex matching
 			const lines = text.split(/\r?\n/);
 
-			// 3. Obtain a fresh global regex with named group "key"
-			const regex = SettingUtils.getResourceLineRegex(); // assumed to be /(?<key>...)/g
-
 			let totalFound = 0;
 
-			// 4. Iterate each line and use exec loop to find all matches
-			for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
-				const line = lines[lineNumber];
-				let match: RegExpExecArray | null;
+			if (isNestedFile) {
+				// For nested files, we need to track both keys and values
+				// Parse the JSON to get the flattened key-value pairs
+				try {
+					const jsonData = JSON.parse(text);
+					const flattenedData = flattenObject(jsonData);
 
-				// Loop until exec() returns null (no more matches in this line)
-				while ((match = regex.exec(line)) !== null) {
-					// Prefer named group "key", otherwise fallback to whole match
-					const key = match.groups?.key ?? match[0];
-					const startIndex = match.index!;
-					const endIndex = startIndex + key.length;
-
-					// Build a Location for this key occurrence
-					const location = new vscode.Location(
-						fileUri,
-						new vscode.Range(
-							new vscode.Position(lineNumber, startIndex),
-							new vscode.Position(lineNumber, endIndex)
-						)
-					);
-
-					// Append to our map of definitions
-					const existing = this.resourceDefinitionLocations.get(key) || [];
-					existing.push(location);
-					this.resourceDefinitionLocations.set(key, existing);
-
-					totalFound++;
+					// Track value locations for each flattened key
+					for (const [flatKey, value] of Object.entries(flattenedData)) {
+						// Find value locations in the file
+						const valueLocations = this.findValueLocationsInText(lines, value, flatKey);
+						if (valueLocations.length > 0) {
+							const existing = this.resourceDefinitionLocations.get(flatKey) || [];
+							valueLocations.forEach(pos => {
+								existing.push(new vscode.Location(
+									fileUri,
+									new vscode.Range(
+										new vscode.Position(pos.line, pos.start),
+										new vscode.Position(pos.line, pos.end)
+									)
+								));
+								totalFound++;
+							});
+							this.resourceDefinitionLocations.set(flatKey, existing);
+						}
+					}
+				} catch (parseError) {
+					Logger.warn(`Failed to parse nested JSON ${fileName}, falling back to regex method:`, parseError);
+					// Fall back to original regex method
+					const regex = SettingUtils.getResourceLineRegex();
+					totalFound = this.processLinesWithRegex(lines, regex, fileUri, totalFound);
 				}
-
-				// Reset lastIndex so the regex will start fresh on next line
-				regex.lastIndex = 0;
+			} else {
+				// For flat files, use the original regex method
+				const regex = SettingUtils.getResourceLineRegex();
+				totalFound = this.processLinesWithRegex(lines, regex, fileUri, totalFound);
 			}
-
 
 			// 5. Summary log and event firing if any keys were found
 			if (totalFound > 0) {
@@ -517,8 +553,115 @@ export default class SettingUtils implements vscode.Disposable {
 		}
 	}
 
+	private processLinesWithRegex(lines: string[], regex: RegExp, fileUri: vscode.Uri, totalFound: number): number {
+		for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+			const line = lines[lineNumber];
+			let match: RegExpExecArray | null;
+
+			// Loop until exec() returns null (no more matches in this line)
+			while ((match = regex.exec(line)) !== null) {
+				// Prefer named group "key", otherwise fallback to whole match
+				const key = match.groups?.key ?? match[0];
+				const startIndex = match.index!;
+				const endIndex = startIndex + key.length;
+
+				// Build a Location for this key occurrence
+				const location = new vscode.Location(
+					fileUri,
+					new vscode.Range(
+						new vscode.Position(lineNumber, startIndex),
+						new vscode.Position(lineNumber, endIndex)
+					)
+				);
+
+				// Append to our map of definitions
+				const existing = this.resourceDefinitionLocations.get(key) || [];
+				existing.push(location);
+				this.resourceDefinitionLocations.set(key, existing);
+
+				totalFound++;
+			}
+
+			// Reset lastIndex so the regex will start fresh on next line
+			regex.lastIndex = 0;
+		}
+		return totalFound;
+	}
+
+	private findValueLocationsInText(lines: string[], value: string, key: string): Array<{line: number, start: number, end: number}> {
+		const positions: Array<{line: number, start: number, end: number}> = [];
+		
+		// Escape special regex characters in the value
+		const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		
+		// Look for the value in quotes (as it would appear in JSON)
+		const valueRegex = new RegExp(`"${escapedValue}"`, 'g');
+		
+		for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+			const line = lines[lineNumber];
+			let match: RegExpExecArray | null;
+			
+			while ((match = valueRegex.exec(line)) !== null) {
+				// Position points to the value content (excluding quotes)
+				const startIndex = match.index! + 1; // Skip opening quote
+				const endIndex = startIndex + value.length; // Just the value content
+				
+				positions.push({
+					line: lineNumber,
+					start: startIndex,
+					end: endIndex
+				});
+			}
+			valueRegex.lastIndex = 0;
+		}
+		
+		return positions;
+	}
+
+	private detectResourceStructure(resources: ResourceItem[]): 'flat' | 'nested' {
+		if (resources.length === 0) return 'flat';
+
+		let nestedCount = 0;
+		let flatCount = 0;
+
+		for (const resource of resources.slice(0, Math.min(3, resources.length))) {
+			const sampleKeys = Object.keys(resource.keyValuePairs).slice(0, 10);
+
+			for (const key of sampleKeys) {
+				if (key.includes('.')) {
+					nestedCount++;
+				} else {
+					flatCount++;
+				}
+			}
+		}
+
+		// If we find more dot-notation keys, consider it nested
+		// Otherwise default to flat
+		return nestedCount > flatCount ? 'nested' : 'flat';
+	}
+
+	private normalizeResourceData(data: unknown): FlatResourceMap {
+		if (!data || typeof data !== 'object') {
+			return {};
+		}
+
+		return flattenObject(data);
+	}
+
 
 	// Static methods
+
+	static getResourceStructureType(): 'flat' | 'nested' {
+		return this._instance.resourceStructureType;
+	}
+
+	static convertToOriginalStructure(flatData: FlatResourceMap, isNested: boolean): any {
+		if (!isNested) {
+			return flatData;
+		}
+		return unflattenObject(flatData);
+	}
 
 	static getResources(): ResourceItem[] {
 		return this._instance.languageResourcesFilesCache;
@@ -539,6 +682,10 @@ export default class SettingUtils implements vscode.Disposable {
 
 	static isEnabledCodeDecorator(): boolean {
 		const value = vscode.workspace.getConfiguration(extensionName).get(settings.underlineDecorator, true);
+		return value;
+	}
+	static isEnabledOverviewRulerMarkers(): boolean {
+		const value = vscode.workspace.getConfiguration(extensionName).get(settings.overviewRulerMarkers, true);
 		return value;
 	}
 	static isEnabledCodeLens(): boolean {

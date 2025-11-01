@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { extensionName } from '../constants';
 import SettingUtils from '../SettingUtils';
 import { Logger } from '../Utils';
 
@@ -17,51 +18,87 @@ export class DecoratorProvider implements vscode.Disposable {
 	private disposables: vscode.Disposable[] = [];
 	private timeout: number | undefined = undefined;
 	private activeEditor = vscode.window.activeTextEditor;
-	private resourceExistDecorationType = vscode.window.createTextEditorDecorationType({
-		light: {
-			textDecoration: "underline #126e1a"
-		},
-		dark: {
-			textDecoration: "underline #2add38"
-		},
-		overviewRulerColor: "#2add38",
-		overviewRulerLane: vscode.OverviewRulerLane.Right
-	});
-	private resourceNotFoundDecorationType = vscode.window.createTextEditorDecorationType({
-		light: {
-			textDecoration: "underline #6e1212"
-		},
-		dark: {
-			textDecoration: "underline #df3a3a"
-		},
-		overviewRulerColor: "#df3a3a",
-		overviewRulerLane: vscode.OverviewRulerLane.Right
-	});
-	private resourceWarnDecorationType = vscode.window.createTextEditorDecorationType({
-		light: {
-			textDecoration: "underline #806a00"
-		},
-		dark: {
-			textDecoration: "underline #ffd91a"
-		},
-		overviewRulerColor: "#ffd91a",
-		overviewRulerLane: vscode.OverviewRulerLane.Right
-	});
-	private resourceNoReferenceDecorationType = vscode.window.createTextEditorDecorationType({
-		opacity: "0.5",
-		overviewRulerColor: "#888888",
-		overviewRulerLane: vscode.OverviewRulerLane.Right
-	});
+	private resourceExistDecorationType!: vscode.TextEditorDecorationType;
+	private resourceNotFoundDecorationType!: vscode.TextEditorDecorationType;
+	private resourceWarnDecorationType!: vscode.TextEditorDecorationType;
+	private resourceNoReferenceDecorationType!: vscode.TextEditorDecorationType;
+
+	private createDecorationTypes() {
+		// Dispose old decorations if they exist
+		this.resourceExistDecorationType?.dispose();
+		this.resourceNotFoundDecorationType?.dispose();
+		this.resourceWarnDecorationType?.dispose();
+		this.resourceNoReferenceDecorationType?.dispose();
+
+		const showOverviewRuler = SettingUtils.isEnabledOverviewRulerMarkers();
+
+		this.resourceExistDecorationType = vscode.window.createTextEditorDecorationType({
+			light: {
+				textDecoration: "underline #126e1a"
+			},
+			dark: {
+				textDecoration: "underline #2add38"
+			}
+		});
+
+		this.resourceNotFoundDecorationType = vscode.window.createTextEditorDecorationType({
+			light: {
+				textDecoration: "underline #6e1212"
+			},
+			dark: {
+				textDecoration: "underline #df3a3a"
+			},
+			...(showOverviewRuler && {
+				overviewRulerColor: "rgba(223, 58, 58, 0.7)",
+				overviewRulerLane: vscode.OverviewRulerLane.Right
+			})
+		});
+
+		this.resourceWarnDecorationType = vscode.window.createTextEditorDecorationType({
+			light: {
+				textDecoration: "underline #806a00"
+			},
+			dark: {
+				textDecoration: "underline #ffd91a"
+			},
+			...(showOverviewRuler && {
+				overviewRulerColor: "rgba(255, 217, 26, 0.7)",
+				overviewRulerLane: vscode.OverviewRulerLane.Right
+			})
+		});
+
+		this.resourceNoReferenceDecorationType = vscode.window.createTextEditorDecorationType({
+			opacity: "0.5",
+			...(showOverviewRuler && {
+				overviewRulerColor: "rgba(136, 136, 136, 0.4)",
+				overviewRulerLane: vscode.OverviewRulerLane.Right
+			})
+		});
+	}
 
 
 
 	dispose() {
+		this.resourceExistDecorationType?.dispose();
+		this.resourceNotFoundDecorationType?.dispose();
+		this.resourceWarnDecorationType?.dispose();
+		this.resourceNoReferenceDecorationType?.dispose();
 		this.disposables.forEach(item => item.dispose());
 		this.disposables = [];
 	}
 
 
 	private initialize = () => {
+		// Create initial decoration types
+		this.createDecorationTypes();
+
+		// Listen for configuration changes
+		vscode.workspace.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(`${extensionName}.overviewRulerMarkers`)) {
+				this.createDecorationTypes();
+				this.triggerUpdateDecorations(false);
+			}
+		}, null, this.disposables);
 
 		if (this.activeEditor) {
 			this.triggerUpdateDecorations(false);

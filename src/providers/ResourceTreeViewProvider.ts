@@ -73,12 +73,12 @@ export class ResourceTreeView {
 }
 
 class ResourceTreeViewProvider implements vscode.TreeDataProvider<ResourceTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<ResourceTreeItem>();
+  private _onDidChangeTreeData = new vscode.EventEmitter<ResourceTreeItem | undefined>();
   private activeUri: vscode.Uri | undefined;
   private static resourceTreeItemList: ResourceTreeItem[] = [];
   private viewRef: { ref: vscode.TreeView<ResourceTreeItem> | null };
 
-  readonly onDidChangeTreeData: vscode.Event<ResourceTreeItem> = this._onDidChangeTreeData.event;
+  readonly onDidChangeTreeData: vscode.Event<ResourceTreeItem | undefined> = this._onDidChangeTreeData.event;
 
   public static getTreeItems() {
     return ResourceTreeViewProvider.resourceTreeItemList;
@@ -91,11 +91,11 @@ class ResourceTreeViewProvider implements vscode.TreeDataProvider<ResourceTreeIt
     vscode.window.onDidChangeActiveTextEditor((e) => {
       this.activeUri = e?.document?.uri;
       ResourceTreeViewProvider.resourceTreeItemList = [];
-      this._onDidChangeTreeData.fire();
+  this._onDidChangeTreeData.fire(undefined);
     }, null, disposables);
     SettingUtils.onDidChangeResourceLocations(() => {
       ResourceTreeViewProvider.resourceTreeItemList = [];
-      this._onDidChangeTreeData.fire();
+  this._onDidChangeTreeData.fire(undefined);
     }, null, disposables);
 
   }

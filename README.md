@@ -1,8 +1,12 @@
 # i18n CodeLens
 
-i18n CodeLens makes it easy to find missing language resources, provides various Code Actions, Hover Information, and tips for you to add or edit the language resources.
+**Professional internationalization management for VS Code**
 
-It can be made to work in various projects by changing the regex information and glob pattern.
+i18n CodeLens is a comprehensive translation management extension that streamlines localization workflows for JavaScript, TypeScript, and React projects. It provides intelligent detection of translation keys, visual indicators for missing translations, and powerful editing tools—all integrated directly into your development environment.
+
+### Key Capabilities
+
+The extension can be customized for different project structures through configurable regex patterns and glob settings, making it adaptable to various i18n frameworks and conventions.
 
 ## ✨ Key Features
 
@@ -14,6 +18,7 @@ It can be made to work in various projects by changing the regex information and
 - **🔄 Real-time Validation**: Instant feedback on missing translations with CodeLens integration
 - **🗂️ Resource Tree View**: Organized view of all translation keys with quick navigation
 - **⚡ Smart Suggestions**: Auto-completion and closest-match positioning for new translations
+- **🧱 Flat/Nested Awareness**: Detects flat translation dictionaries and deeply nested JSON, preserving structure during edits
 
 ## Demo
 
@@ -23,28 +28,81 @@ It can be made to work in various projects by changing the regex information and
 
 ![Bulk Edit Demo](/bulk.gif)
 
-## 🚀 What's New in v1.1.0
+## 🚀 What's New in v1.2.0
 
-### Bulk Translation Editor
-- **WebView Interface**: Modern, responsive editing interface for multiple translation keys
-- **Source File Tracking**: Shows which file triggered the bulk edit operation  
-- **Visual Grid Layout**: Easy-to-use table format with VS Code theme integration
-- **Real-time Validation**: Highlights empty fields and shows completion statistics
-- **Safe Delete Operations**: Custom confirmation dialogs for destructive actions
+### Model Context Protocol (MCP) Integration
+Automate translation workflows with five production-ready MCP tools:
+- **AI-powered assistance**: Works with GitHub Copilot Agentic, Claude for VS Code, and other MCP clients
+- **Automatic registration**: Zero-configuration setup via VS Code LM API
+- **Standalone mode**: Run `npm run mcp` for use with any MCP-compatible client
+- **Smart key discovery**: New `i18n_key_references` tool locates up to 25 code references per translation key
 
-### Enhanced Hover Provider  
-- **Action Links**: Direct edit, add, and delete links in hover popups
-- **Smart Context**: Shows different actions based on existing vs missing translations
-- **Bulk Edit Triggers**: Quick access to bulk editor for documents with multiple keys
-- **Translation Status**: Clear indicators of which languages are missing translations
+### Enhanced JSON Structure Support
+- **Intelligent detection**: Automatically identifies flat vs. nested translation file structures
+- **Safe mutations**: Preserves original formatting when updating nested JSON files
+- **Better diagnostics**: Resource Tree, CodeLens, and hover details now accurately reflect nested lookups
 
-### Improved Reliability
-- **JSON-Safe Operations**: Prevents trailing comma corruption during file modifications
-- **Enhanced Error Handling**: Comprehensive error reporting with detailed logging
-- **Better Performance**: Optimized resource monitoring and change detection
-- **Extended Language Support**: Full React (JSX/TSX) compatibility
+### Quality Improvements
+- **Stable ordering**: Sorted resource cache ensures predictable behavior across features
+- **Improved gitignore handling**: Properly respects workspace `.gitignore` during scans
+- **Flexible configuration**: Override glob patterns and regex via environment variables for custom project structures
+
+> Looking for earlier highlights? Check the Change Log below for v1.1.x feature details.
+
+## 🤖 MCP Automation Tools
+
+The extension includes a Model Context Protocol (MCP) stdio server for AI-powered automation.
+
+### Integration Options
+
+**VS Code LM API (Recommended)**  
+The extension automatically registers with VS Code's Language Model API. Compatible clients like GitHub Copilot Agentic, Claude for VS Code, and other MCP-aware tools can invoke the tools without additional configuration.
+
+**Standalone Mode**  
+Run `npm run mcp` or `node ./out/mcp/server.js` from the workspace root to start the MCP server independently.
+
+### Environment Variables
+
+Customize server behavior with these environment variables:
+
+- `WORKSPACE_ROOT` — Absolute path to scan (defaults to current workspace)
+- `I18N_GLOB` — Pattern for resource files (defaults to `**/locales/**/*.json`)
+- `I18N_CODE_REGEX` — Custom regex for detecting translation keys
+- `I18N_CODE_GLOB` — Pattern for code files (defaults to `**/*.{ts,tsx,js,jsx}`)
+
+> **Note**: Auto-registration requires VS Code 1.96.0 or newer. For older versions, use standalone mode with `npm run mcp`.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `i18n_check_keys` | Checks presence of translation keys across all language files |
+| `i18n_untranslated_keys_on_page` | Identifies keys used in a file but missing from any locale |
+| `i18n_translate_upsert` | Bulk add or update translations across multiple languages |
+| `i18n_delete_key` | Removes a translation key from all locale files |
+| `i18n_key_references` | Finds all code locations referencing specific translation keys |
+
+These tools integrate with AI workflows to automate translation validation, identify gaps, and streamline localization management.
+
+## 🧱 Flat & Nested JSON Support
+
+The extension intelligently handles both flat and nested translation file structures:
+
+- **Automatic detection**: Identifies whether files use flat key-value maps or nested object hierarchies
+- **Internal flattening**: Processes nested structures internally for search and CodeLens functionality
+- **Structure preservation**: Maintains original formatting when writing updates to disk
+- **Flexibility**: Edit deeply nested locale files without manual flattening, while keeping MCP automation fully functional
 
 ## Change Log
+
+##### v1.2.0
+- **Added**: Model Context Protocol stdio server with five automation tools and VS Code LM auto-registration
+- **Added**: Automatic detection of nested translation files with safe flatten/unflatten helpers
+- **Added**: `overviewRulerMarkers` setting for scroll bar indicators
+- **Improved**: Resource sorting and `.gitignore` handling for stable results across features
+- **Improved**: Manual MCP usage via `npm run mcp` and environment overrides
+- **Improved**: Cleaner scroll bar with smart indicators - only problematic translations are highlighted
+- **Updated**: Minimum VS Code version to `^1.96.0` to enable LM/MCP integration
 
 ##### v1.1.1
 - **Enhanced**: Logger system with structured log levels (debug, info, warn, error) and configurable `logLevel` setting
@@ -101,60 +159,104 @@ Performance tweaks & refactored with new features
 ##### v1.0.0
 - Initial release
 
-## Settings
+## Configuration
 
-#### `codeLens`
-- Enable or disable the CodeLens for missing resource code. Default: `true`
+### Core Settings
 
-#### `resourceAutoSave`
-- Enable auto save for resource file(s) that saves files after inserted or updated resource data. Default: `true`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `codeLens` | Enable CodeLens indicators for missing translations | `true` |
+| `underlineCodeDecorator` | Show underline decorations for missing translations | `true` |
+| `overviewRulerMarkers` | Show scroll bar markers for problematic translations (warnings/errors only) | `true` |
+| `resourceAutoSave` | Auto-save resource files after edits | `true` |
+| `autoFocusAfterModified` | Focus editor on modified resource files | `false` |
 
-#### `underlineCodeDecorator`
-- Enable or disable the underline decorator for missing resource code(s). Default: `true`
+### Tree View Settings
 
-#### `autoFocusAfterModified`
-- Enable auto focus document after inserted or updated target resource file(s). Default: `false`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `resourceTreeViewVisible` | Display Resource Tree View in Explorer | `true` |
+| `revealResourceInTreeView` | Auto-reveal selected resources in Tree View | `false` |
 
-#### `revealResourceInTreeView`
-- Enable or disable the automatic reveal resource item in the Resource Tree View when selected resource file on the editor. Default: `false`
+### Pattern Settings
 
-#### `resourceTreeViewVisible`
-- Enable or disable the Resource Tree View. Default: `true`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `resourceFilesGlobPattern` | Glob pattern for locating translation files | `**/locales/**/*.json` |
+| `resourceCodeDetectionRegex` | Regex for detecting translation keys in code | See below |
+| `codeFileRegex` | Pattern for identifying code files | `/\.(jsx?|tsx?)$/` |
 
-#### `resourceFilesGlobPattern`
-- Language file glob patterns (Language resource files must be key value object files). Default: `**/locales/**/*.json`
+**Default detection regex:**  
+`(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["])`
 
-#### `resourceCodeDetectionRegex`
-- Regular expression pattern to identify resource keys for hover information and CodeLenses. The default pattern matches: `t('key')`, `T('key')`, or keys preceded by `/** @i18n */` comment. Default: `(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["'])`
+This matches:
+- `t('key')` or `T('key')` — Function call patterns
+- `/** @i18n */ 'key'` — Comment annotation pattern
 
-### `codeFileRegex`
-- Regular expression pattern to identify code files for translation keys. Default: `/\.(jsx?|tsx?)$/`
+### Logging
 
-#### `logLevel`
-- Controls the log level of the i18n CodeLens extension. Set to 'debug' for more verbose logs. Default: `warn`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `logLevel` | Control extension log verbosity (`debug`, `info`, `warn`, `error`, `off`) | `warn` |
 
-## 📖 Usage Examples
+## 📖 Usage Guide
 
-### Basic Translation Detection
+### Translation Key Detection
+
+The extension automatically detects translation keys using these patterns:
+
 ```javascript
-// These patterns will be detected automatically:
-t('welcome.message')           // Function call pattern
-T('user.name')                 // Uppercase function pattern  
-/** @i18n */ 'button.submit'   // Comment annotation pattern
+// Function call patterns
+t('welcome.message')           // lowercase
+T('user.greeting')             // uppercase
+
+// JSX/TSX usage
+<Text>{t('button.submit')}</Text>
+
+// Annotation pattern
+/** @i18n */ 'settings.title'
 ```
 
-### Bulk Editing Workflow
-1. Open any file with multiple translation keys
-2. Hover over any translation key
-3. Click "📋 Bulk Edit (X keys)" link
-4. Edit all translations in the visual interface
-5. Save or delete multiple keys at once
+### Quick Actions
 
-### Resource Management
-- **Add**: Hover over missing translation → Click "Add Translations"
-- **Edit**: Hover over existing translation → Click "Edit Translations"  
-- **Delete**: Hover over any translation → Click "Delete Translations"
-- **Bulk Operations**: Use bulk editor for multiple keys
+**Add Missing Translations**
+1. Hover over any translation key with missing translations
+2. Click **"Add Translations"** in the hover popup
+3. Enter translations for each required language
+4. Files are saved automatically (if `resourceAutoSave` is enabled)
+
+**Edit Existing Translations**
+1. Hover over a translation key
+2. Click **"Edit Translations"**
+3. Modify values for any language
+4. Changes are applied instantly
+
+**Delete Translations**
+1. Hover over a translation key
+2. Click **"Delete Translations"**
+3. Confirm removal
+4. Key is removed from all locale files
+
+### Bulk Editing
+
+For efficient multi-key editing:
+
+1. Open a file containing multiple translation keys
+2. Hover over any key and click **"📋 Bulk Edit (X keys)"**
+3. The visual editor opens with all keys from the current file
+4. Edit, add, or delete multiple translations simultaneously
+5. Click **Save** to apply all changes at once
+
+### Navigation & Discovery
+
+**Go to Definition**  
+`Ctrl+Click` (or `Cmd+Click`) on any translation key to jump to its definition in locale files.
+
+**Resource Tree View**  
+View all translations used in the active file organized by key, with visual indicators for:
+- ✅ Complete translations (all languages present)
+- ⚠️ Partial translations (some languages missing)
+- ❌ Missing translations (key not found)
 
 ## 🤝 Contributing
 

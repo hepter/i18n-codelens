@@ -13,15 +13,15 @@ export class CodelensProvider implements vscode.CodeLensProvider {
         languageKey: string,
         missingTranslationList: string[]
     }>();
-    private static _onDidChangeCodeLenses = new vscode.EventEmitter<vscode.Disposable[]>();
+	private static _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
 
     public static readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
 
 
     constructor(disposables: vscode.Disposable[]) {
-        SettingUtils.onDidChangeResourceLocations(() => {
-            CodelensProvider._onDidChangeCodeLenses.fire();
-        }, null, disposables);
+		SettingUtils.onDidChangeResourceLocations(() => {
+			CodelensProvider._onDidChangeCodeLenses.fire();
+		}, null, disposables);
     }
 
 	public provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] {

@@ -16,6 +16,7 @@ import { HoverProvider } from './providers/HoverProvider';
 import { ResourceTreeView } from './providers/ResourceTreeViewProvider';
 import SettingUtils from './SettingUtils';
 import { Logger } from './Utils';
+import * as path from 'path';
 
 let disposables: vscode.Disposable[] = [];
 
@@ -25,6 +26,32 @@ export async function activate(context: vscode.ExtensionContext) {
         Logger.info("Starting i18n CodeLens extension activation...");
 
         const settingUtil = SettingUtils.getInstance();
+
+        // Register MCP server definition provider for GitHub Copilot Agent & other LM clients
+        try {
+            if ((vscode as any).lm && typeof (vscode as any).lm.registerMcpServerDefinitionProvider === 'function') {
+                const providerId = 'i18n-codelens.mcp';
+                const serverLabel = 'i18n-codelens';
+                const serverJs = context.asAbsolutePath(path.join('out', 'mcp', 'server.js'));
+
+                const disposable = (vscode as any).lm.registerMcpServerDefinitionProvider(providerId, {
+                    provideMcpServerDefinitions: () => {
+                        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+                        const glob = vscode.workspace.getConfiguration('i18n-codelens').get<string>('resourceFilesGlobPattern');
+                        const env: Record<string, string> = { WORKSPACE_ROOT: workspaceRoot };
+                        if (glob) env.I18N_GLOB = glob;
+                        const def = new (vscode as any).McpStdioServerDefinition(serverLabel, 'node', [serverJs], env);
+                        return [def];
+                    }
+                });
+                context.subscriptions.push(disposable);
+                Logger.info('MCP provider registered for i18n CodeLens');
+            } else {
+                Logger.info('MCP API not available in this VS Code version; skipping MCP provider registration.');
+            }
+        } catch (err) {
+            Logger.warn('Failed to register MCP provider:', err);
+        }
 
         Logger.info("Setting up event listeners...");
         SettingUtils.onDidLoad((instanceDisposables) => {
@@ -40,25 +67,25 @@ export async function activate(context: vscode.ExtensionContext) {
                 id.push(vscode.languages.registerHoverProvider(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'json'], new HoverProvider()));
                 id.push(vscode.languages.registerCodeActionsProvider(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'json'], new ResourceEditCodeAction()));
 
-				// Register commands
-				id.push(vscode.commands.registerCommand(actions.enableCodeLens, ActionEnableDisableCodeLens(true)));
-				id.push(vscode.commands.registerCommand(actions.disableCodeLens, ActionEnableDisableCodeLens(false)));
-				id.push(vscode.commands.registerCommand(actions.resetAndReloadExtension, ActionResetAndReloadExtension));
-				id.push(vscode.commands.registerCommand(actions.addResource, ActionAddLanguageResource));
-				id.push(vscode.commands.registerCommand(actions.editResource, ActionEditLanguageResource));
-				id.push(vscode.commands.registerCommand(actions.deleteResource, ActionDeleteLanguageResource));
-				id.push(vscode.commands.registerCommand(actions.focusResource, ActionFocusResource));
-				id.push(vscode.commands.registerCommand(actions.bulkEditResources, async (keys: string[], documentUri?: string) => {
-					let sourceDocument: vscode.TextDocument | undefined;
-					if (documentUri) {
-						try {
-							sourceDocument = await vscode.workspace.openTextDocument(vscode.Uri.parse(documentUri));
-						} catch (error) {
-							Logger.warn("Could not open source document:", error);
-						}
-					}
-					return ActionBulkEditResources(keys, sourceDocument);
-				}));                // Initialize tree view
+                // Register commands
+                id.push(vscode.commands.registerCommand(actions.enableCodeLens, ActionEnableDisableCodeLens(true)));
+                id.push(vscode.commands.registerCommand(actions.disableCodeLens, ActionEnableDisableCodeLens(false)));
+                id.push(vscode.commands.registerCommand(actions.resetAndReloadExtension, ActionResetAndReloadExtension));
+                id.push(vscode.commands.registerCommand(actions.addResource, ActionAddLanguageResource));
+                id.push(vscode.commands.registerCommand(actions.editResource, ActionEditLanguageResource));
+                id.push(vscode.commands.registerCommand(actions.deleteResource, ActionDeleteLanguageResource));
+                id.push(vscode.commands.registerCommand(actions.focusResource, ActionFocusResource));
+                id.push(vscode.commands.registerCommand(actions.bulkEditResources, async (keys: string[], documentUri?: string) => {
+                    let sourceDocument: vscode.TextDocument | undefined;
+                    if (documentUri) {
+                        try {
+                            sourceDocument = await vscode.workspace.openTextDocument(vscode.Uri.parse(documentUri));
+                        } catch (error) {
+                            Logger.warn("Could not open source document:", error);
+                        }
+                    }
+                    return ActionBulkEditResources(keys, sourceDocument);
+                }));                // Initialize tree view
                 new ResourceTreeView(id);
 
                 Logger.info("Providers and commands registered successfully");
@@ -72,6 +99,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await settingUtil.initialize();
 
         disposables.push(settingUtil);
+
         context.subscriptions.push(...disposables);
 
         Logger.info(`${extensionName} extension activated successfully!`);
@@ -82,6 +110,8 @@ export async function activate(context: vscode.ExtensionContext) {
         );
     }
 }
+
+// Note: Avoid auto-writing unregistered settings for MCP/Copilot.
 
 export function deactivate() {
     try {
