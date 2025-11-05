@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "i18n": {
+      "name": "i18n-codelens",
+      "transport": "stdio",
+      "command": "node",
+      "args": ["./out/mcp/server.js"]
+    }
+  }
+}

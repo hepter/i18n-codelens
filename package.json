@@ -2,7 +2,7 @@
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
     "description": "Advanced i18n CodeLens with bulk translation editing, interactive hover actions, MCP automation tools, and comprehensive language resource management for JavaScript, TypeScript, and React projects.",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -67,6 +67,21 @@
                 "title": "Reset cache and reload",
                 "command": "i18n-codelens.resetAndReloadExtensionAction",
                 "category": "i18n CodeLens"
+            },
+            {
+                "title": "Start MCP Server (Inspector)",
+                "command": "i18n-codelens.startMcpServer",
+                "category": "i18n CodeLens"
+            },
+            {
+                "title": "Stop MCP Server (Inspector)",
+                "command": "i18n-codelens.stopMcpServer",
+                "category": "i18n CodeLens"
+            },
+            {
+                "title": "Restart MCP Server (Inspector)",
+                "command": "i18n-codelens.restartMcpServer",
+                "category": "i18n CodeLens"
             }
         ],
         "configuration": {
@@ -112,11 +127,49 @@
                     "editPresentation": "singlelineText",
                     "default": "**/locales/**/*.json"
                 },
+                "i18n-codelens.codeFilesGlobPattern": {
+                    "type": "string",
+                    "description": "Glob pattern used to scan code files for i18n key references.",
+                    "editPresentation": "singlelineText",
+                    "default": "**/*.{ts,tsx,js,jsx}"
+                },
                 "i18n-codelens.resourceCodeDetectionRegex": {
                     "type": "string",
                     "description": "Regular expression pattern to identify resource keys for hover information and CodeLenses. The default pattern matches: t('key'), T('key'), or keys preceded by /** @i18n */ comment.",
                     "editPresentation": "singlelineText",
-                    "default": "(?<=\\/\\*\\*\\s*?@i18n\\s*?\\*\\/\\s*?[\"']|\\W[tT]\\(\\s*[\"'])(?<key>[A-Za-z0-9 .-]+?)(?=[\"'])"
+                    "default": "(?<=\\/\\*\\*\\s*?@i18n\\s*?\\*\\/\\s*?[\"']|\\W[tT]\\(\\s*[\"'])(?<key>[A-Za-z0-9 .-_]+?)(?=[\"'])"
+                },
+                "i18n-codelens.codeFileRegex": {
+                    "type": "string",
+                    "description": "Regular expression to test code file paths (advanced). Prefer using codeFilesGlobPattern when possible.",
+                    "editPresentation": "singlelineText",
+                    "default": "\\.(jsx?|tsx?)$"
+                },
+                "i18n-codelens.ignoreGlobs": {
+                    "type": "array",
+                    "description": "Glob patterns to ignore when scanning files (applies to both code and resource scans).",
+                    "items": { "type": "string" },
+                    "default": ["**/node_modules/**"]
+                },
+                "i18n-codelens.resourceStructureStrategy": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "nested",
+                        "flat"
+                    ],
+                    "default": "auto",
+                    "description": "Controls how translation keys are added to JSON resource files: follow nested objects, use flat dot-notation keys, or auto-detect from existing files."
+                },
+                "i18n-codelens.resourceInsertOrderStrategy": {
+                    "type": "string",
+                    "enum": [
+                        "append",
+                        "nearby",
+                        "sort"
+                    ],
+                    "default": "nearby",
+                    "description": "Controls how new translation keys are inserted into JSON files: 'append' (add to the end), 'nearby' (insert near the closest key - Levenshtein), 'sort' (insert and sort all keys A→Z). The existing order is preserved in the first two options."
                 },
                 "i18n-codelens.logLevel": {
                     "type": "string",
@@ -139,7 +192,8 @@
         "compile": "tsc -p ./",
         "lint": "eslint . --ext .ts,.tsx",
         "watch": "tsc -watch -p ./",
-        "mcp": "node ./out/mcp/server.js"
+        "mcp": "node ./out/mcp/server.js",
+        "inspect": "npx @modelcontextprotocol/inspector --config ./inspector.config.json --server i18n"
     },
     "devDependencies": {
         "@types/lodash": "^4.14.180",

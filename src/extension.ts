@@ -19,6 +19,75 @@ import { Logger } from './Utils';
 import * as path from 'path';
 
 let disposables: vscode.Disposable[] = [];
+let mcpTerminal: vscode.Terminal | undefined;
+let mcpProviderDisposable: vscode.Disposable | undefined;
+
+function buildMcpEnv(): Record<string, string> {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+    const cfg = vscode.workspace.getConfiguration('i18n-codelens');
+    const env: Record<string, string> = { WORKSPACE_ROOT: workspaceRoot };
+    const resourceGlob = cfg.get<string>('resourceFilesGlobPattern');
+    const codeGlob = cfg.get<string>('codeFilesGlobPattern');
+    const codeRegex = cfg.get<string>('resourceCodeDetectionRegex');
+    const ignoreGlobs = cfg.get<string[]>('ignoreGlobs');
+    const structure = cfg.get<string>('resourceStructureStrategy');
+    const insertOrder = cfg.get<string>('resourceInsertOrderStrategy');
+    if (resourceGlob) env.I18N_GLOB = resourceGlob;
+    if (codeGlob) env.I18N_CODE_GLOB = codeGlob;
+    if (codeRegex) env.I18N_CODE_REGEX = codeRegex;
+    if (ignoreGlobs && ignoreGlobs.length) env.I18N_IGNORE = ignoreGlobs.join(';');
+    if (structure) env.I18N_STRUCTURE = structure;
+    if (insertOrder) env.I18N_INSERT_ORDER = insertOrder;
+    return env;
+}
+
+function registerMcpProvider(context: vscode.ExtensionContext) {
+    try {
+        if ((vscode as any).lm && typeof (vscode as any).lm.registerMcpServerDefinitionProvider === 'function') {
+            mcpProviderDisposable?.dispose();
+            const providerId = 'i18n-codelens.mcp';
+            const serverLabel = 'i18n-codelens';
+            const serverJs = context.asAbsolutePath(path.join('out', 'mcp', 'server.js'));
+
+            mcpProviderDisposable = (vscode as any).lm.registerMcpServerDefinitionProvider(providerId, {
+                provideMcpServerDefinitions: () => {
+                    const env = buildMcpEnv();
+                    const def = new (vscode as any).McpStdioServerDefinition(serverLabel, 'node', [serverJs], env);
+                    return [def];
+                }
+            });
+            if (mcpProviderDisposable) context.subscriptions.push(mcpProviderDisposable);
+            Logger.info('MCP provider registered/updated for i18n CodeLens');
+        } else {
+            Logger.info('MCP API not available in this VS Code version; skipping MCP provider registration.');
+        }
+    } catch (err) {
+        Logger.warn('Failed to register MCP provider:', err);
+    }
+}
+
+function startMcpServerInTerminal(context: vscode.ExtensionContext) {
+    const serverJs = context.asAbsolutePath(path.join('out', 'mcp', 'server.js'));
+    const env = buildMcpEnv();
+    // Stop existing
+    stopMcpServerInTerminal();
+    mcpTerminal = vscode.window.createTerminal({ name: 'i18n MCP Server', env });
+    mcpTerminal.sendText(`node "${serverJs}"`, true);
+    mcpTerminal.show(false);
+}
+
+function stopMcpServerInTerminal() {
+    try {
+        mcpTerminal?.dispose();
+    } finally {
+        mcpTerminal = undefined;
+    }
+}
+
+function restartMcpServerInTerminal(context: vscode.ExtensionContext) {
+    stopMcpServerInTerminal();
+    startMcpServerInTerminal(context);
+}
 
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -28,30 +97,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const settingUtil = SettingUtils.getInstance();
 
         // Register MCP server definition provider for GitHub Copilot Agent & other LM clients
-        try {
-            if ((vscode as any).lm && typeof (vscode as any).lm.registerMcpServerDefinitionProvider === 'function') {
-                const providerId = 'i18n-codelens.mcp';
-                const serverLabel = 'i18n-codelens';
-                const serverJs = context.asAbsolutePath(path.join('out', 'mcp', 'server.js'));
-
-                const disposable = (vscode as any).lm.registerMcpServerDefinitionProvider(providerId, {
-                    provideMcpServerDefinitions: () => {
-                        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-                        const glob = vscode.workspace.getConfiguration('i18n-codelens').get<string>('resourceFilesGlobPattern');
-                        const env: Record<string, string> = { WORKSPACE_ROOT: workspaceRoot };
-                        if (glob) env.I18N_GLOB = glob;
-                        const def = new (vscode as any).McpStdioServerDefinition(serverLabel, 'node', [serverJs], env);
-                        return [def];
-                    }
-                });
-                context.subscriptions.push(disposable);
-                Logger.info('MCP provider registered for i18n CodeLens');
-            } else {
-                Logger.info('MCP API not available in this VS Code version; skipping MCP provider registration.');
-            }
-        } catch (err) {
-            Logger.warn('Failed to register MCP provider:', err);
-        }
+        registerMcpProvider(context);
 
         Logger.info("Setting up event listeners...");
         SettingUtils.onDidLoad((instanceDisposables) => {
@@ -92,6 +138,26 @@ export async function activate(context: vscode.ExtensionContext) {
             } catch (error) {
                 Logger.error("ERROR registering providers and commands:", error);
                 vscode.window.showErrorMessage(`Failed to register extension components: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }, null, disposables);
+
+
+        disposables.push(vscode.commands.registerCommand(actions.startMcpServer, () => startMcpServerInTerminal(context)));
+        disposables.push(vscode.commands.registerCommand(actions.stopMcpServer, () => stopMcpServerInTerminal()));
+        disposables.push(vscode.commands.registerCommand(actions.restartMcpServer, () => restartMcpServerInTerminal(context)));
+
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('i18n-codelens.resourceFilesGlobPattern') ||
+                e.affectsConfiguration('i18n-codelens.codeFilesGlobPattern') ||
+                e.affectsConfiguration('i18n-codelens.resourceCodeDetectionRegex') ||
+                e.affectsConfiguration('i18n-codelens.ignoreGlobs') ||
+                e.affectsConfiguration('i18n-codelens.resourceStructureStrategy') ||
+                e.affectsConfiguration('i18n-codelens.resourceInsertOrderStrategy')) {
+                registerMcpProvider(context);
+                if (mcpTerminal) {
+                    restartMcpServerInTerminal(context);
+                    vscode.window.setStatusBarMessage('i18n MCP server restarted due to config changes', 3000);
+                }
             }
         }, null, disposables);
 

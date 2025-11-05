@@ -7,6 +7,7 @@ import ignore from 'ignore';
 import { extensionName, settings } from './constants';
 import { Logger } from './Utils';
 import { FlatResourceMap, flattenObject, isObjectNested, unflattenObject } from './shared/resourceUtils';
+import { buildCodeRegex, StructurePreference } from './shared/config';
 
 const excludePattern = "**/node_modules/**";
 
@@ -15,6 +16,7 @@ export type ResourceItem = {
 	fileName: string
 	keyValuePairs: FlatResourceMap
 	isNested?: boolean
+	hasDotKey?: boolean
 };
 
 export default class SettingUtils implements vscode.Disposable {
@@ -27,6 +29,7 @@ export default class SettingUtils implements vscode.Disposable {
 	private globPattern!: string;
 	private mm!: IMinimatch;
 	private codeRegex!: RegExp;
+	private codeGlobPattern = "**/*.{ts,tsx,js,jsx}";
 	private resourceDefinitionLocations = new Map<string, vscode.Location[]>();
 	private languageResourcesFilesCache: ResourceItem[] = [];
 	private initialLoadDone: boolean;
@@ -34,6 +37,7 @@ export default class SettingUtils implements vscode.Disposable {
 	private codeFileRegex = /^(.(?!.*node_modules))*\.(jsx?|tsx?)$/;
 	private gitIgnore!: ignore.Ignore;
 	private resourceStructureType: 'flat' | 'nested' = 'flat';
+	private resourceStructureStrategy: StructurePreference = 'auto';
 
 	public static readonly fireDebouncedOnDidChangeResourceLocations = debounce((value: Map<string, vscode.Location[]>) => {
 		SettingUtils._onDidChangeResourceLocations.fire(value);
@@ -104,8 +108,10 @@ export default class SettingUtils implements vscode.Disposable {
 
 			Logger.info("Reading configuration settings...");
 			this.readAndListenConfigs();
+			this.refreshStructureStrategyFromConfig();
 			this.refreshGlobFromConfig();
 			this.refreshRegexFromConfig();
+			this.refreshCodeGlobFromConfig();
 			this.refreshCodeFileRegexFromConfig();
 			Logger.info("Configuration settings loaded successfully");
 
@@ -133,6 +139,8 @@ export default class SettingUtils implements vscode.Disposable {
 
 			Logger.info("Refreshing regex pattern from config...");
 			this.refreshRegexFromConfig();
+			this.refreshCodeGlobFromConfig();
+			this.refreshStructureStrategyFromConfig();
 
 			Logger.info("Setting up configuration change listeners...");
 			vscode.workspace.onDidChangeConfiguration(async (e) => {
@@ -148,6 +156,15 @@ export default class SettingUtils implements vscode.Disposable {
 						Logger.info("Resource regex configuration changed, refreshing...");
 						this.refreshRegexFromConfig();
 						await this.findAllResourceReferencesFromCodeFiles();
+						isChanged = true;
+					} else if (e.affectsConfiguration(settings.codeFilesGlobPattern)) {
+						Logger.info("Code files glob configuration changed, refreshing...");
+						this.refreshCodeGlobFromConfig();
+						await this.findAllResourceReferencesFromCodeFiles();
+						isChanged = true;
+					} else if (e.affectsConfiguration(settings.structureStrategy)) {
+						Logger.info("Resource structure strategy configuration changed, refreshing...");
+						this.refreshStructureStrategyFromConfig();
 						isChanged = true;
 					}
 
@@ -168,14 +185,14 @@ export default class SettingUtils implements vscode.Disposable {
 
 	private refreshGlobFromConfig() {
 		try {
-			const configValue = vscode.workspace.getConfiguration(extensionName).get(settings.globPattern, "**/locales/*.json");
+			const configValue = vscode.workspace.getConfiguration(extensionName).get(settings.globPattern, "**/locales/**/*.json");
 			Logger.info(`Setting glob pattern: ${configValue}`);
 			this.globPattern = configValue;
 			this.mm = new Minimatch(this.globPattern);
 		} catch (error) {
 			Logger.error("ERROR refreshing glob from config:", error);
 			// Use default values on error
-			this.globPattern = "**/locales/*.json";
+			this.globPattern = "**/locales/**/*.json";
 			this.mm = new Minimatch(this.globPattern);
 			vscode.window.showWarningMessage("Failed to load glob pattern config, using default.");
 		}
@@ -185,13 +202,45 @@ export default class SettingUtils implements vscode.Disposable {
 		try {
 			const rx = vscode.workspace.getConfiguration(extensionName).get(settings.resourceRegex, "");
 			Logger.info(`Setting resource regex: ${rx}`);
-			this.codeRegex = new RegExp(rx, "g");
+			this.codeRegex = buildCodeRegex(rx as string);
 
 		} catch (error) {
 			Logger.error("ERROR refreshing regex from config:", error);
 			// Use default regex on error
-			this.codeRegex = /(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["'])/g;
+			this.codeRegex = /(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-_]+?)(?=["'])/g;
 			vscode.window.showWarningMessage("Failed to load regex config, using default.");
+		}
+	};
+	private refreshStructureStrategyFromConfig = () => {
+		try {
+			const value = vscode.workspace.getConfiguration(extensionName).get<StructurePreference>(settings.structureStrategy, 'auto');
+			this.resourceStructureStrategy = value ?? 'auto';
+			Logger.info(`Setting resource structure strategy: ${this.resourceStructureStrategy}`);
+			this.updateDetectedStructureType();
+		} catch (error) {
+			Logger.error("ERROR refreshing structure strategy from config:", error);
+			this.resourceStructureStrategy = 'auto';
+		}
+	};
+	private updateDetectedStructureType = () => {
+		switch (this.resourceStructureStrategy) {
+			case 'flat':
+			case 'nested':
+				this.resourceStructureType = this.resourceStructureStrategy;
+				return;
+			default:
+				this.resourceStructureType = this.detectResourceStructure(this.languageResourcesFilesCache);
+		}
+	};
+	private refreshCodeGlobFromConfig() {
+		try {
+			const configValue = vscode.workspace.getConfiguration(extensionName).get(settings.codeFilesGlobPattern, "**/*.{ts,tsx,js,jsx}");
+			Logger.info(`Setting code files glob: ${configValue}`);
+			this.codeGlobPattern = String(configValue);
+		} catch (error) {
+			Logger.error("ERROR refreshing code files glob from config:", error);
+			this.codeGlobPattern = "**/*.{ts,tsx,js,jsx}";
+			vscode.window.showWarningMessage("Failed to load code files glob config, using default.");
 		}
 	}
 	private refreshCodeFileRegexFromConfig() {
@@ -228,10 +277,8 @@ export default class SettingUtils implements vscode.Disposable {
 			await Promise.all(vscodeUriList.map(uri => this.insertOrUpdateResourceByUri(uri)));
 
 			// Detect structure type after processing all files
-			if (this.languageResourcesFilesCache.length > 0) {
-				this.resourceStructureType = this.detectResourceStructure(this.languageResourcesFilesCache);
-				Logger.info(`Detected resource structure type: ${this.resourceStructureType}`);
-			}
+			this.updateDetectedStructureType();
+			Logger.info(`Detected resource structure type: ${this.resourceStructureType}`);
 
 			Logger.info(`Successfully processed ${vscodeUriList.length} resource files`);
 		} catch (error) {
@@ -246,6 +293,7 @@ export default class SettingUtils implements vscode.Disposable {
 				const fileName = path.parse(fileUri.fsPath).name;
 				Logger.info(`Removing resource file from cache: ${fileName}`);
 				this.languageResourcesFilesCache = this.languageResourcesFilesCache.filter(r => r.uri.fsPath !== fileUri.fsPath);
+				this.updateDetectedStructureType();
 				return;
 			}
 
@@ -287,6 +335,8 @@ export default class SettingUtils implements vscode.Disposable {
 				this.languageResourcesFilesCache.push(newResource);
 			}
 
+			this.updateDetectedStructureType();
+
 			if (this.initialLoadDone) {
 				SettingUtils.fireDebouncedOnDidChangeResource(this.languageResourcesFilesCache);
 			}
@@ -296,7 +346,6 @@ export default class SettingUtils implements vscode.Disposable {
 				Logger.error(`JSON parse error in ${fileName}:`, error.message);
 				vscode.window.showErrorMessage(`Invalid JSON in ${fileName}: ${error.message}`);
 			} else {
-				Logger.error(`ERROR processing resource file ${fileName}:`, error);
 				vscode.window.showErrorMessage(`Failed to process ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
@@ -367,7 +416,7 @@ export default class SettingUtils implements vscode.Disposable {
 			await this.findAllResourceReferencesFromCodeFiles();
 
 			Logger.info("Setting up code file watchers...");
-			const watcher = vscode.workspace.createFileSystemWatcher("**/*.{ts,tsx,js,jsx}");
+			const watcher = vscode.workspace.createFileSystemWatcher(this.codeGlobPattern);
 			const watcherHandler = (type: string) => async (e: vscode.Uri) => {
 				try {
 					if (/^(.(?!.*node_modules))*\.(jsx?|tsx?)$/.test(e.fsPath)) {
@@ -414,7 +463,7 @@ export default class SettingUtils implements vscode.Disposable {
 	}
 
 	private async findAllResourceReferencesFromCodeFiles() {
-		const allFiles = await vscode.workspace.findFiles("**/*.{ts,tsx,js,jsx}", excludePattern);
+		const allFiles = await vscode.workspace.findFiles(this.codeGlobPattern, excludePattern);
 		const folders = vscode.workspace.workspaceFolders;
 		const root = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
 
@@ -588,24 +637,24 @@ export default class SettingUtils implements vscode.Disposable {
 		return totalFound;
 	}
 
-	private findValueLocationsInText(lines: string[], value: string, key: string): Array<{line: number, start: number, end: number}> {
-		const positions: Array<{line: number, start: number, end: number}> = [];
-		
+	private findValueLocationsInText(lines: string[], value: string, key: string): Array<{ line: number, start: number, end: number }> {
+		const positions: Array<{ line: number, start: number, end: number }> = [];
+
 		// Escape special regex characters in the value
 		const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-		
+
 		// Look for the value in quotes (as it would appear in JSON)
 		const valueRegex = new RegExp(`"${escapedValue}"`, 'g');
-		
+
 		for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
 			const line = lines[lineNumber];
 			let match: RegExpExecArray | null;
-			
+
 			while ((match = valueRegex.exec(line)) !== null) {
 				// Position points to the value content (excluding quotes)
 				const startIndex = match.index! + 1; // Skip opening quote
 				const endIndex = startIndex + value.length; // Just the value content
-				
+
 				positions.push({
 					line: lineNumber,
 					start: startIndex,
@@ -614,7 +663,7 @@ export default class SettingUtils implements vscode.Disposable {
 			}
 			valueRegex.lastIndex = 0;
 		}
-		
+
 		return positions;
 	}
 

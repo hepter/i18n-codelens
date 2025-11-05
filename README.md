@@ -10,6 +10,7 @@ The extension can be customized for different project structures through configu
 
 ## ✨ Key Features
 
+- **🤖 MCP Integration & Automation**: Built-in MCP stdio server with rich i18n tools; auto-registers via VS Code LM API and works with Copilot Agentic, Claude for VS Code, and other MCP clients
 - **🔍 Smart Translation Detection**: Automatically detects translation keys in your code using configurable regex patterns
 - **📋 Bulk Translation Editor**: Professional WebView-based interface for editing multiple translation keys simultaneously
 - **🎯 Interactive Hover Actions**: Click-to-edit, add, or delete translations directly from hover popups
@@ -19,6 +20,7 @@ The extension can be customized for different project structures through configu
 - **🗂️ Resource Tree View**: Organized view of all translation keys with quick navigation
 - **⚡ Smart Suggestions**: Auto-completion and closest-match positioning for new translations
 - **🧱 Flat/Nested Awareness**: Detects flat translation dictionaries and deeply nested JSON, preserving structure during edits
+- **🧭 Insert Order Strategies**: Control how new keys are placed in locale files — append to end, insert near the closest key (Levenshtein), or fully sort A→Z
 
 ## Demo
 
@@ -27,6 +29,19 @@ The extension can be customized for different project structures through configu
 ### Bulk Translation Editor in Action
 
 ![Bulk Edit Demo](/bulk.gif)
+
+## 🚀 What's New in v1.2.1
+
+### Insert Order & Consistent Writes
+- New setting `resourceInsertOrderStrategy` (append | nearby | sort). Default is `nearby` for closest-match placement without disturbing existing order
+- MCP respects the same strategy via `I18N_INSERT_ORDER` to keep automation and UI in sync
+- Writes preserve original order unless you explicitly choose `sort`
+
+### Expanded MCP Tooling
+- Added tools for locales listing, translation retrieval, diffs, workspace scans, key renames/moves, and placeholder validation
+- Safer file operations: workspace-bounded paths, .gitignore-aware scans, and atomic writes
+
+> Looking for earlier highlights? See v1.2.0 below.
 
 ## 🚀 What's New in v1.2.0
 
@@ -69,6 +84,9 @@ Customize server behavior with these environment variables:
 - `I18N_GLOB` — Pattern for resource files (defaults to `**/locales/**/*.json`)
 - `I18N_CODE_REGEX` — Custom regex for detecting translation keys
 - `I18N_CODE_GLOB` — Pattern for code files (defaults to `**/*.{ts,tsx,js,jsx}`)
+- `I18N_IGNORE` — Additional glob patterns to ignore (e.g., `**/dist/**;**/.next/**`); `.gitignore` is also respected
+- `I18N_STRUCTURE` — Controls write structure (`auto` | `flat` | `nested`)
+- `I18N_INSERT_ORDER` — Controls insert order (`append` | `nearby` | `sort`)
 
 > **Note**: Auto-registration requires VS Code 1.96.0 or newer. For older versions, use standalone mode with `npm run mcp`.
 
@@ -76,11 +94,15 @@ Customize server behavior with these environment variables:
 
 | Tool | Description |
 |------|-------------|
-| `i18n_check_keys` | Checks presence of translation keys across all language files |
-| `i18n_untranslated_keys_on_page` | Identifies keys used in a file but missing from any locale |
-| `i18n_translate_upsert` | Bulk add or update translations across multiple languages |
-| `i18n_delete_key` | Removes a translation key from all locale files |
-| `i18n_key_references` | Finds all code locations referencing specific translation keys |
+| `i18n_list_locales` | Lists available locale files with normalized tags and human-friendly descriptions |
+| `i18n_get_translations` | Retrieves translations for specified keys and locales |
+| `i18n_upsert_translations` | Bulk add or update translations across multiple locales (supports dry-run) |
+| `i18n_delete_key` | Removes a translation key from all locale files (supports locale filter and dry-run) |
+| `i18n_diff_locales` | Diffs base vs. compare locales: missing/extra keys and placeholder parity |
+| `i18n_scan_workspace_missing` | Scans code for referenced keys missing in resources and surfaces references |
+| `i18n_rename_key` | Renames a key across all locales with collision checks (supports dry-run) |
+| `i18n_move_namespace` | Moves a key prefix (namespace) across locales with safety checks (supports dry-run) |
+| `i18n_validate_placeholders` | Validates placeholder consistency across locales |
 
 These tools integrate with AI workflows to automate translation validation, identify gaps, and streamline localization management.
 
@@ -94,6 +116,12 @@ The extension intelligently handles both flat and nested translation file struct
 - **Flexibility**: Edit deeply nested locale files without manual flattening, while keeping MCP automation fully functional
 
 ## Change Log
+
+##### v1.2.1
+- **Added**: `resourceInsertOrderStrategy` setting with configurable strategies (`append`, `nearby`, `sort`) so you decide how new translations are positioned; `nearby` uses closest-match heuristics by default.
+- **Added**: `I18N_INSERT_ORDER` environment variable and MCP wiring to keep Copilot/Inspector automation aligned with the chosen insert strategy.
+- **Improved**: Translation writes (flat or nested JSON) preserve original ordering unless explicit alphabetical sorting is requested, preventing unexpected churn in locale files.
+- **Improved**: Shared ordering utilities reuse the same Levenshtein-based placement logic across extension actions and MCP tools for consistent behaviour.
 
 ##### v1.2.0
 - **Added**: Model Context Protocol stdio server with five automation tools and VS Code LM auto-registration
@@ -183,11 +211,15 @@ Performance tweaks & refactored with new features
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `resourceFilesGlobPattern` | Glob pattern for locating translation files | `**/locales/**/*.json` |
+| `codeFilesGlobPattern` | Glob pattern used to scan code files for i18n references | `**/*.{ts,tsx,js,jsx}` |
 | `resourceCodeDetectionRegex` | Regex for detecting translation keys in code | See below |
 | `codeFileRegex` | Pattern for identifying code files | `/\.(jsx?|tsx?)$/` |
+| `ignoreGlobs` | Additional ignore globs for scans (both code and resources) | `['**/node_modules/**']` |
+| `resourceStructureStrategy` | Write structure: `auto`, `flat`, or `nested` | `auto` |
+| `resourceInsertOrderStrategy` | Insert order: `append`, `nearby`, or `sort` | `nearby` |
 
 **Default detection regex:**  
-`(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["])`
+`(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-_]+?)(?=["])`
 
 This matches:
 - `t('key')` or `T('key')` — Function call patterns

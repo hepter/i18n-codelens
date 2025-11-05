@@ -7,9 +7,13 @@ export const settings = {
 	overviewRulerMarkers: "overviewRulerMarkers",
 	autoFocus: "autoFocusAfterModified",
 	globPattern: "resourceFilesGlobPattern",
+	codeFilesGlobPattern: "codeFilesGlobPattern",
 	resourceRegex: "resourceCodeDetectionRegex",
+	ignoreGlobs: "ignoreGlobs",
 	revealTreeView: "revealResourceInTreeView",
 	codeFileRegex: "codeFileRegex",
+	structureStrategy: "resourceStructureStrategy",
+	insertOrderStrategy: "resourceInsertOrderStrategy",
 	logLevel: "logLevel",
 };
 
@@ -23,4 +27,7 @@ export const actions = {
 	focusResource: `${extensionName}.focusResourceAction`,
 	revealResource: `${extensionName}.revealResourceAction`,
 	bulkEditResources: `${extensionName}.bulkEditResourcesAction`,
+	startMcpServer: `${extensionName}.startMcpServer`,
+	stopMcpServer: `${extensionName}.stopMcpServer`,
+	restartMcpServer: `${extensionName}.restartMcpServer`,
 };

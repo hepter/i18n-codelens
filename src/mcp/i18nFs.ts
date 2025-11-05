@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import fg from 'fast-glob';
+import ignore from 'ignore';
 import { flattenObject, isObjectNested, FlatResourceMap } from '../shared/resourceUtils';
+import { DEFAULT_RESOURCE_GLOB, DEFAULT_CODE_GLOB, buildCodeRegex, getEffectiveConfigFromEnv } from '../shared/config';
 
 export { setNestedValue, deleteNestedKey } from '../shared/resourceUtils';
 
@@ -12,8 +14,6 @@ export type ResourceFile = {
   keyValuePairs: FlatResourceMap; // flattened
 };
 
-const DEFAULT_GLOB = '**/locales/**/*.json';
-const DEFAULT_CODE_GLOB = '**/*.{ts,tsx,js,jsx}';
 
 export type KeyReference = {
   filePath: string;
@@ -33,8 +33,9 @@ export function getWorkspaceRoot(): string {
 
 export async function readResourceFiles(globPattern?: string): Promise<ResourceFile[]> {
   const root = getWorkspaceRoot();
-  const pattern = globPattern || process.env.I18N_GLOB || DEFAULT_GLOB;
-  const entries = await fg(pattern, { cwd: root, absolute: true, onlyFiles: true, dot: false, ignore: ['**/node_modules/**'] });
+  const envCfg = getEffectiveConfigFromEnv(process.env);
+  const pattern = globPattern || envCfg.resourceGlob || DEFAULT_RESOURCE_GLOB;
+  const entries = await fg(pattern, { cwd: root, absolute: true, onlyFiles: true, dot: false, ignore: envCfg.ignoreGlobs });
 
   entries.sort((a, b) => path.parse(a).name.localeCompare(path.parse(b).name));
 
@@ -43,8 +44,8 @@ export async function readResourceFiles(globPattern?: string): Promise<ResourceF
     try {
       const raw = fs.readFileSync(absPath, 'utf8');
       const json = JSON.parse(raw);
-  const isNested = isObjectNested(json);
-  const flattened = flattenObject(json);
+      const isNested = isObjectNested(json);
+      const flattened = flattenObject(json);
       result.push({
         filePath: absPath,
         fileName: path.parse(absPath).name,
@@ -58,20 +59,72 @@ export async function readResourceFiles(globPattern?: string): Promise<ResourceF
   return result;
 }
 
+function normalizePathCasing(target: string): string {
+  return process.platform === 'win32' ? target.toLowerCase() : target;
+}
+
+function ensureSafeWorkspacePath(absPath: string): string {
+  const root = path.resolve(getWorkspaceRoot());
+  const normalizedRoot = normalizePathCasing(root);
+  const resolved = path.resolve(absPath);
+  const normalizedResolved = normalizePathCasing(resolved);
+
+  if (normalizedResolved !== normalizedRoot && !normalizedResolved.startsWith(normalizedRoot + path.sep)) {
+    throw new Error(`Refusing to access path outside workspace root: ${absPath}`);
+  }
+
+  let current = resolved;
+  while (normalizePathCasing(current) !== normalizedRoot) {
+    if (fs.existsSync(current)) {
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink()) {
+        throw new Error(`Refusing to follow symbolic link while accessing ${absPath}`);
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  return resolved;
+}
+
 export function writeFilePretty(absPath: string, json: any) {
+  const target = ensureSafeWorkspacePath(absPath);
   const content = JSON.stringify(json, null, 2) + '\n';
-  fs.writeFileSync(absPath, content, 'utf8');
+  const dir = path.dirname(target);
+
+  fs.mkdirSync(dir, { recursive: true });
+
+  const tempFile = path.join(dir, `${path.basename(target)}.${process.pid}.${Date.now()}.tmp`);
+
+  try {
+    fs.writeFileSync(tempFile, content, 'utf8');
+    fs.renameSync(tempFile, target);
+  } catch (error) {
+    if (fs.existsSync(tempFile)) {
+      try {
+        fs.unlinkSync(tempFile);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    throw error;
+  }
 }
 
 export function loadJson(absPath: string): any {
-  const raw = fs.readFileSync(absPath, 'utf8');
+  const target = ensureSafeWorkspacePath(absPath);
+  const raw = fs.readFileSync(target, 'utf8');
   return JSON.parse(raw);
 }
 
 export function findUntranslatedKeysInFile(codeFilePath: string, keys: string[]): string[] {
   // Extract resource keys used in the given file with the default regex from extension settings
   const raw = fs.readFileSync(codeFilePath, 'utf8');
-  const rx = buildCodeRegex();
+  const rx = buildCodeRegex(process.env.I18N_CODE_REGEX);
   const found = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = rx.exec(raw)) !== null) {
@@ -82,20 +135,6 @@ export function findUntranslatedKeysInFile(codeFilePath: string, keys: string[])
   const arr = Array.from(found);
   if (keys && keys.length) return arr.filter(k => keys.includes(k));
   return arr;
-}
-
-export function buildCodeRegex(): RegExp {
-  const pattern = process.env.I18N_CODE_REGEX || String.raw`(?<=\/\*\*\s*?@i18n\s*?\*\/\s*?["']|\W[tT]\(\s*["'])(?<key>[A-Za-z0-9 .-]+?)(?=["'])`;
-
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
-    const body = pattern.substring(1, lastSlash);
-    const flags = pattern.substring(lastSlash + 1);
-    const finalFlags = flags.includes('g') ? flags : `${flags}g`;
-    return new RegExp(body, finalFlags);
-  }
-
-  return new RegExp(pattern, 'g');
 }
 
 function computeLineStarts(text: string): number[] {
@@ -137,14 +176,25 @@ export async function findKeyReferences(
   }
 
   const workspaceRoot = getWorkspaceRoot();
-  const globPattern = process.env.I18N_CODE_GLOB || DEFAULT_CODE_GLOB;
+  const envCfg = getEffectiveConfigFromEnv(process.env);
+  const globPattern = envCfg.codeGlob || DEFAULT_CODE_GLOB;
   const codeFiles = await fg(globPattern, {
     cwd: workspaceRoot,
     absolute: true,
     onlyFiles: true,
     dot: false,
-    ignore: ['**/node_modules/**']
+    ignore: envCfg.ignoreGlobs
   });
+
+  // Respect .gitignore if present
+  let ig = ignore();
+  const giPath = path.join(workspaceRoot, '.gitignore');
+  try {
+    const content = fs.readFileSync(giPath, 'utf8');
+    ig = ignore().add(content);
+  } catch {
+    // no .gitignore present; proceed without additional ignores
+  }
 
   const normalizedResourcePaths = new Set(Array.from(resourceFilePaths).map(p => path.normalize(p)));
   const keysSet = new Set(keys);
@@ -153,12 +203,16 @@ export async function findKeyReferences(
     summaries[key] = { total: 0, references: [] };
   }
 
-  const regexPattern = buildCodeRegex();
+  const regexPattern = buildCodeRegex(process.env.I18N_CODE_REGEX);
 
   for (const filePath of codeFiles) {
     if (normalizedResourcePaths.has(path.normalize(filePath))) {
       continue;
     }
+
+    // Filter by .gitignore
+    const rel = path.relative(workspaceRoot, filePath);
+    if (rel && ig.ignores(rel)) continue;
 
     let content: string;
     try {
