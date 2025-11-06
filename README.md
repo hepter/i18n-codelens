@@ -97,6 +97,11 @@ The extension intelligently handles both flat and nested translation file struct
 
 ## Change Log
 
+##### v1.2.3
+- Stabilized MCP registration (single supported constructor, no fallbacks, with new log channel for MCP Server)
+- Non‑blocking logging with graceful console fallback
+- Useful diagnostics: startup config + per‑tool success/error with durations
+
 ##### v1.2.2
 - **Fixed**: MCP duplicate tool registrations in GitHub Copilot Chat by pruning stale/invalid `mcpServers` entries and keeping only the current server path at activation.
 - **Improved**: More robust MCP provider lifecycle (re-register/dispose) with safer error handling.

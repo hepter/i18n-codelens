@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import fg from 'fast-glob';
 import ignore from 'ignore';
+import net from 'net';
 import {
   readResourceFiles,
   getWorkspaceRoot,
@@ -80,8 +81,12 @@ type NamespaceMoveSummary = {
   }>;
 };
 
-const PLACEHOLDER_BRACE = /\{\{\s*([\w.-]+)\s*\}\}/g;
-const PLACEHOLDER_CURVY = /\{\s*([\w.-]+)\s*\}/g;
+const PLACEHOLDER_BRACE = /\{\{\s*([\d\w.-]+)\s*\}\}/g;
+const PLACEHOLDER_CURVY = /\{\s*([\d\w.-]+)\s*\}/g;
+
+let mcpLogger: (msg: string) => void = (msg: string) => {
+  try { console.log(msg); } catch { /* ignore */ }
+};
 
 function normalizeLocaleTag(input: string): string {
   if (!input) return '';
@@ -398,8 +403,14 @@ async function collectWorkspaceKeys(excludePaths: Set<string>): Promise<Set<stri
 async function ensureResources() {
   const resources = await readResourceFiles();
   if (resources.length === 0) {
-    throw new Error('No i18n resource files found. Adjust WORKSPACE_ROOT or I18N_GLOB.');
+    const root = getWorkspaceRoot();
+    const cfg = getEffectiveConfigFromEnv(process.env);
+    throw new Error(`No i18n resource files found. Adjust WORKSPACE_ROOT or I18N_GLOB. Details: WORKSPACE_ROOT='${root}', I18N_GLOB='${cfg.resourceGlob}'`);
   }
+  try {
+    const preview = resources.slice(0, 5).map(r => r.fileName).join(', ');
+    mcpLogger(`[i18n-codelens MCP] resources detected: count=${resources.length}, sample=[${preview}]`);
+  } catch { /* ignore */ }
   return resources;
 }
 
@@ -949,6 +960,68 @@ async function toolKeyReferences(keys: string[], limit?: number) {
 }
 
 async function main() {
+  // Remote logger to VS Code extension output channel
+  (() => {
+    const portRaw = process.env.I18N_MCP_LOG_PORT;
+    const queue: string[] = [];
+    let socket: net.Socket | undefined;
+    let tries = 0;
+    const connect = () => {
+      const port = portRaw ? parseInt(portRaw, 10) : NaN;
+      if (!portRaw || Number.isNaN(port)) return; // no env => only console
+      try {
+        const s = net.createConnection({ host: '127.0.0.1', port }, () => {
+          socket = s;
+          // flush queued
+          while (queue.length) {
+            const line = queue.shift();
+            if (typeof line === 'string') {
+              try { s.write(line + '\n'); } catch { /* ignore */ }
+            }
+          }
+        });
+        s.on('error', () => {
+          socket = undefined;
+          if (tries < 5) {
+            tries++;
+            setTimeout(connect, 300 * tries);
+          }
+        });
+        s.on('close', () => {
+          socket = undefined;
+        });
+      } catch {
+        if (tries < 5) {
+          tries++;
+          setTimeout(connect, 300 * tries);
+        }
+      }
+    };
+    connect();
+    mcpLogger = (msg: string) => {
+      try { console.log(msg); } catch { /* ignore */ }
+      if (socket && socket.writable) {
+        try { socket.write(msg + '\n'); } catch { /* ignore */ }
+      } else {
+        queue.push(msg);
+      }
+    };
+  })();
+
+  try {
+    mcpLogger(`[i18n-codelens MCP] __dirname: ${__dirname}`);
+    mcpLogger(`[i18n-codelens MCP] process.cwd(): ${process.cwd()}`);
+    mcpLogger(`[i18n-codelens MCP] node=${process.version} platform=${process.platform} arch=${process.arch} pid=${process.pid}`);
+    mcpLogger(`[i18n-codelens MCP] env.WORKSPACE_ROOT: ${process.env.WORKSPACE_ROOT ?? '(unset)'}`);
+    mcpLogger(`[i18n-codelens MCP] getWorkspaceRoot(): ${getWorkspaceRoot()}`);
+    const eff = getEffectiveConfigFromEnv(process.env);
+    mcpLogger(`[i18n-codelens MCP] config: resourceGlob='${eff.resourceGlob}', codeGlob='${eff.codeGlob}', ignoreGlobs=[${eff.ignoreGlobs.join(', ')}]`);
+    if (process.env.I18N_CODE_REGEX) {
+      mcpLogger(`[i18n-codelens MCP] config: codeRegex='${process.env.I18N_CODE_REGEX}'`);
+    }
+    mcpLogger(`[i18n-codelens MCP] strategies: structure='${eff.structurePreference}', insertOrder='${eff.insertOrderStrategy}'`);
+  } catch {/* ignore */ }
+
   const server = new Server({ name: 'i18n-codelens-mcp', version: '0.1.0' }, {
     capabilities: { tools: { listChanged: true } }
   });
@@ -1114,64 +1187,98 @@ async function main() {
   server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     const name: string = request.params.name;
     const args: any = request.params.arguments || {};
-
+    const started = Date.now();
     try {
+      const argSummary = (() => {
+        try {
+          switch (name) {
+            case 'i18n_check_keys': return `keys=${(args.keys || []).length}`;
+            case 'i18n_get_translations': return `keys=${(args.keys || []).length}, locales=${(args.locales || []).length}`;
+            case 'i18n_upsert_translations': return `entries=${(args.entries || []).length}, dryRun=${Boolean(args.dryRun)}`;
+            case 'i18n_delete_key': return `key='${args.key}', locales=${(args.locales || []).length}, dryRun=${Boolean(args.dryRun)}`;
+            case 'i18n_diff_locales': return `base='${args.base}', compare=${(args.compare || []).length}`;
+            case 'i18n_key_references': return `keys=${(args.keys || []).length}, limit=${args.limit ?? 'unset'}`;
+            case 'i18n_rename_key': return `from='${args.from}', to='${args.to}', locales=${(args.locales || []).length}, dryRun=${Boolean(args.dryRun)}`;
+            case 'i18n_move_namespace': return `from='${args.from}', to='${args.to}', locales=${(args.locales || []).length}, dryRun=${Boolean(args.dryRun)}`;
+            case 'i18n_untranslated_keys_on_page': return `filePath='${args.filePath}'`;
+            case 'i18n_validate_placeholders': return `keys=${(args.keys || []).length}, locales=${(args.locales || []).length}, baseLocale='${args.baseLocale ?? '(auto)'}'`;
+            default: return '';
+          }
+        } catch { return ''; }
+      })();
+      mcpLogger(`[i18n-codelens MCP] tool.start name=${name}${argSummary ? ' ' + argSummary : ''}`);
+
       if (name === 'i18n_list_locales') {
         const result = await toolListLocales();
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} locales=${result.locales.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_check_keys') {
         const result = await toolCheckKeys(args.keys || []);
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} keys=${Object.keys(result).length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_get_translations') {
         const result = await toolGetTranslations(args);
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} keys=${(args.keys || []).length}, locales=${result.locales.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_upsert_translations') {
         const result = await toolUpsertTranslations(args);
+        try { const s = result.summary; mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} created=${s.created} updated=${s.updated} unchanged=${s.unchanged} errors=${s.errors} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_delete_key') {
         const result = await toolDeleteKey(args);
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} deletedFrom=${result.deletedFrom.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_diff_locales') {
         const result = await toolDiffLocales(args);
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} comparisons=${result.comparisons.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_scan_workspace_missing') {
         const result = await toolScanWorkspaceMissing();
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} totalMissing=${result.totalMissing} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_untranslated_keys_on_page') {
         const keys = await toolUntranslatedKeysOnPage(args.filePath);
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} keys=${keys.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify({ keys }) }] };
       }
       if (name === 'i18n_key_references') {
         const result = await toolKeyReferences(args.keys || [], args.limit);
+        try { const totals = Object.values(result).reduce((a: any, b: any) => a + (b?.total ?? 0), 0); mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} keys=${(args.keys || []).length} refs=${totals} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_rename_key') {
         const result = await toolRenameKey(args);
+        try { const s = result.summary; mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} renamed=${s.renamed} skipped=${s.skipped} errors=${s.errors} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_move_namespace') {
         const result = await toolMoveNamespace(args);
+        try { const s = result.summary; mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} moved=${s.moved} skipped=${s.skipped} errors=${s.errors} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_validate_placeholders') {
         const result = await toolValidatePlaceholders(args);
+        try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} base=${result.baseLocale} mismatches=${result.mismatches.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
+      try { mcpLogger(`[i18n-codelens MCP] tool.unknown name=${name} (${Date.now() - started}ms)`); } catch { /* ignore */ }
       return { content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
     } catch (err: any) {
+      try { mcpLogger(`[i18n-codelens MCP] tool.error name=${name} (${Date.now() - started}ms) message=${err?.message || String(err)} stack=${err?.stack ? ('' + err.stack).split('\n')[0] : '(no-stack)'}`); } catch { /* ignore */ }
       return { content: [{ type: 'text', text: `Error: ${err?.message || String(err)}` }], isError: true };
     }
   });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  try { mcpLogger('[i18n-codelens MCP] server connected (stdio)'); } catch { /* ignore */ }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-floating-promises

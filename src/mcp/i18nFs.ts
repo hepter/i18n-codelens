@@ -27,8 +27,26 @@ export type KeyReferenceSummary = {
 };
 
 export function getWorkspaceRoot(): string {
-  // Prefer explicit env, fallback to CWD
-  return process.env.WORKSPACE_ROOT || process.cwd();
+  // Prefer explicit env
+  const envRoot = process.env.WORKSPACE_ROOT ? path.resolve(process.env.WORKSPACE_ROOT) : undefined;
+  const serverRoot = path.resolve(__dirname, '..', '..'); // project root (from out/mcp)
+  const cwdRoot = path.resolve(process.cwd());
+
+  const isUsable = (p?: string) => {
+    if (!p) return false;
+    try { return fs.statSync(p).isDirectory(); } catch { return false; }
+  };
+
+  let chosen: string;
+  if (isUsable(envRoot)) {
+    chosen = envRoot!;
+  } else if (isUsable(serverRoot)) {
+    chosen = serverRoot;
+  } else {
+    chosen = cwdRoot;
+  }
+  console.log(`[i18n-codelens MCP] Using workspace root: ${chosen}`);
+  return chosen;
 }
 
 export async function readResourceFiles(globPattern?: string): Promise<ResourceFile[]> {

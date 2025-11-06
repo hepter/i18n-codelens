@@ -2,7 +2,7 @@
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
     "description": "Advanced i18n CodeLens with bulk translation editing, interactive hover actions, MCP automation tools, and comprehensive language resource management for JavaScript, TypeScript, and React projects.",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -86,6 +86,12 @@
         ],
         "configuration": {
             "properties": {
+                "i18n-codelens.workspaceRootOverride": {
+                    "type": "string",
+                    "description": "Optional absolute path to override the workspace root used by the MCP server (advanced). Leave empty to use the first VS Code workspace folder.",
+                    "editPresentation": "singlelineText",
+                    "default": ""
+                },
                 "i18n-codelens.codeLens": {
                     "type": "boolean",
                     "default": true,

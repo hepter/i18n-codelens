@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as net from 'net';
 
 import ActionAddLanguageResource from './actions/ActionAddLanguageResource';
 import ActionDeleteLanguageResource from './actions/ActionDeleteLanguageResource';
@@ -24,11 +25,66 @@ let disposables: vscode.Disposable[] = [];
 let mcpTerminal: vscode.Terminal | undefined;
 const mcpDidChange = new vscode.EventEmitter<void>();
 let mcpProviderDisposable: vscode.Disposable | undefined;
+let mcpLogServer: net.Server | undefined;
+let mcpLogPort: number | undefined;
+let mcpLogChannel: vscode.OutputChannel | undefined;
+
+async function ensureMcpLogServer(): Promise<number | undefined> {
+    if (mcpLogPort && mcpLogServer) return mcpLogPort;
+    mcpLogChannel = mcpLogChannel || vscode.window.createOutputChannel('i18n CodeLens MCP');
+    const attempt = (): Promise<number | undefined> => new Promise((resolve) => {
+        try {
+            const server = net.createServer((socket) => {
+                socket.setEncoding('utf8');
+                let buffer = '';
+                socket.on('data', (chunk: string) => {
+                    buffer += chunk;
+                    let idx: number;
+                    while ((idx = buffer.indexOf('\n')) >= 0) {
+                        const line = buffer.slice(0, idx);
+                        buffer = buffer.slice(idx + 1);
+                        if (mcpLogChannel && line.trim().length) {
+                            mcpLogChannel.appendLine(line);
+                        }
+                    }
+                });
+                socket.on('error', () => {/* ignore */ });
+            });
+            server.on('error', () => resolve(undefined));
+            server.listen(0, '127.0.0.1', () => {
+                const addr = server.address();
+                if (addr && typeof addr === 'object') {
+                    mcpLogServer = server;
+                    mcpLogPort = addr.port;
+                    resolve(mcpLogPort);
+                } else {
+                    resolve(undefined);
+                }
+            });
+        } catch {
+            resolve(undefined);
+        }
+    });
+    // Try up to 2 attempts in case of transient failure
+    const p1 = await attempt();
+    if (p1) return p1;
+    const p2 = await attempt();
+    return p2;
+}
 
 function buildMcpEnv(): Record<string, string> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const workspaceRoot = workspaceFolder?.uri.fsPath || process.cwd();
+
+    const overrideRoot = vscode.workspace.getConfiguration('i18n-codelens').get<string>('workspaceRootOverride');
+    const normalizedRoot = path.resolve((overrideRoot && overrideRoot.trim()) ? overrideRoot : workspaceRoot);
+
     const cfg = vscode.workspace.getConfiguration('i18n-codelens');
-    const env: Record<string, string> = { WORKSPACE_ROOT: workspaceRoot };
+    const env: Record<string, string> = { WORKSPACE_ROOT: normalizedRoot };
+    if (mcpLogPort) {
+        env.I18N_MCP_LOG_PORT = String(mcpLogPort);
+    }
 
     const resourceGlob = cfg.get<string>('resourceFilesGlobPattern');
     const codeGlob = cfg.get<string>('codeFilesGlobPattern');
@@ -47,32 +103,15 @@ function buildMcpEnv(): Record<string, string> {
     return env;
 }
 
-/**
- * Constructor shim: tries positional overloads first (VS Code 1.105.x),
- * falls back to options object if ever needed by future builds.
- */
-function createMcpDefCompat(
+function createMcpStdioDefinition(
     label: string,
     command: string,
     args: readonly string[] | undefined,
-    cwd: vscode.Uri | undefined,
-    env: Record<string, string> | undefined
+    env: Record<string, string> | undefined,
+    version?: string,
 ): vscode.McpServerDefinition {
     const Ctor: any = (vscode as any).McpStdioServerDefinition;
-
-    // 5-arg form: (label, command, args?, cwd?, env?)
-    try { return new Ctor(label, command, args ?? [], cwd, env) as vscode.McpServerDefinition; } catch { }
-
-    // 4-arg form: (label, command, args?, env?)
-    try { return new Ctor(label, command, args ?? [], env) as vscode.McpServerDefinition; } catch { }
-
-    // 3-arg form: (label, command, args?)
-    try { return new Ctor(label, command, args ?? []) as vscode.McpServerDefinition; } catch { }
-
-    // Options object fallback
-    try { return new Ctor({ label, command, args: args ?? [], cwd, env }) as vscode.McpServerDefinition; } catch { }
-
-    throw new Error('Unsupported McpStdioServerDefinition constructor signature.');
+    return new Ctor(label, command, args ?? [], env, version) as vscode.McpServerDefinition;
 }
 
 /**
@@ -102,7 +141,8 @@ async function registerMcpProvider(context: vscode.ExtensionContext) {
             onDidChangeMcpServerDefinitions: mcpDidChange.event,
             provideMcpServerDefinitions: () => {
                 const env = buildMcpEnv();
-                const def = createMcpDefCompat(label, 'node', [serverJs], vscode.Uri.file(path.dirname(serverJs)), env);
+                const version = context.extension.packageJSON?.version as string | undefined;
+                const def = createMcpStdioDefinition(label, 'node', [serverJs], env, version);
                 return [def];
             },
             resolveMcpServerDefinition: async (server: any) => server
@@ -119,6 +159,7 @@ async function registerMcpProvider(context: vscode.ExtensionContext) {
 
 function startMcpServerInTerminal(context: vscode.ExtensionContext) {
     const serverJs = context.asAbsolutePath(path.join('out', 'mcp', 'server.js'));
+    if (!mcpLogPort) { void ensureMcpLogServer(); }
     const env = { ...process.env, ...buildMcpEnv(), MCP_DEV: '1' };
     stopMcpServerInTerminal();
     mcpTerminal = vscode.window.createTerminal({ name: 'i18n MCP Server (dev)', env });
@@ -144,6 +185,8 @@ export async function activate(context: vscode.ExtensionContext) {
         Logger.info("Starting i18n CodeLens extension activation...");
 
         const settingUtil = SettingUtils.getInstance();
+
+        try { await ensureMcpLogServer(); } catch { /* ignore */ }
 
         // Register MCP server definition provider for GitHub Copilot Agent & other LM clients
         await registerMcpProvider(context);
@@ -195,6 +238,19 @@ export async function activate(context: vscode.ExtensionContext) {
         disposables.push(vscode.commands.registerCommand(actions.stopMcpServer, () => stopMcpServerInTerminal()));
         disposables.push(vscode.commands.registerCommand(actions.restartMcpServer, () => restartMcpServerInTerminal(context)));
 
+
+        vscode.workspace.onDidChangeWorkspaceFolders(() => {
+            try {
+                mcpDidChange.fire();
+                if (process.env.MCP_DEV === '1' && mcpTerminal) {
+                    restartMcpServerInTerminal(context);
+                }
+                vscode.window.setStatusBarMessage('i18n MCP server refreshed due to workspace change', 3000);
+            } catch (error) {
+                Logger.warn('Failed to handle workspace folder change:', error);
+            }
+        }, null, disposables);
+
         vscode.workspace.onDidChangeConfiguration((e) => {
             try {
                 if (e.affectsConfiguration('i18n-codelens.resourceFilesGlobPattern') ||
@@ -235,6 +291,10 @@ export function deactivate() {
         Logger.info("Deactivating i18n CodeLens extension...");
         mcpProviderDisposable?.dispose();
         mcpProviderDisposable = undefined;
+
+        try { mcpLogServer?.close(); } catch { /* ignore */ }
+        mcpLogServer = undefined;
+        mcpLogPort = undefined;
 
         for (const d of disposables) {
             try {

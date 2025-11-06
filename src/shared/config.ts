@@ -44,18 +44,18 @@ export function getEffectiveConfigFromEnv(env: NodeJS.ProcessEnv): EffectiveConf
 	const structurePreference = parseStructurePreference(env.I18N_STRUCTURE);
 	const insertOrderStrategy = parseInsertOrderStrategy(env.I18N_INSERT_ORDER);
 	return { resourceGlob, codeGlob, codeRegex, ignoreGlobs, structurePreference, insertOrderStrategy };
-}
+	}
 
-export function parseIgnoreGlobs(value?: string): string[] {
-	if (!value) return [...DEFAULT_IGNORE_GLOBS];
-	// Accept JSON array, comma or semicolon separated string
-	try {
-		const parsed = JSON.parse(value);
-		if (Array.isArray(parsed) && parsed.every(v => typeof v === 'string')) return parsed as string[];
-	} catch {/* ignore json parse errors */ }
-	const parts = value.split(/[;,]/).map(s => s.trim()).filter(Boolean);
-	return parts.length ? parts : [...DEFAULT_IGNORE_GLOBS];
-}
+	export function parseIgnoreGlobs(value?: string): string[] {
+		if (!value) return [...DEFAULT_IGNORE_GLOBS];
+		// Accept JSON array, comma or semicolon separated string
+		try {
+			const parsed = JSON.parse(value);
+			if (Array.isArray(parsed) && parsed.every(v => typeof v === 'string')) return parsed as string[];
+		} catch {/* ignore json parse errors */ }
+		const parts = value.split(/[;,]/).map((s: string) => s.trim()).filter(Boolean);
+		return parts.length ? parts : [...DEFAULT_IGNORE_GLOBS];
+	}
 
 export function parseStructurePreference(value?: string): StructurePreference {
 	if (!value) return DEFAULT_STRUCTURE_PREFERENCE;
