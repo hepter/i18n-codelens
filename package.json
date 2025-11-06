@@ -2,7 +2,7 @@
     "name": "i18n-codelens",
     "displayName": "i18n CodeLens",
     "description": "Advanced i18n CodeLens with bulk translation editing, interactive hover actions, MCP automation tools, and comprehensive language resource management for JavaScript, TypeScript, and React projects.",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "publisher": "mustafa-kuru",
     "author": {
         "email": "mustafakuru042@gmail.com",
@@ -11,7 +11,7 @@
     "private": true,
     "icon": "images/logo.png",
     "engines": {
-        "vscode": "^1.105.0"
+        "vscode": "^1.105.1"
     },
     "categories": [
         "Other",

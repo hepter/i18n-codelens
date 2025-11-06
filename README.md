@@ -30,39 +30,19 @@ The extension can be customized for different project structures through configu
 
 ![Bulk Edit Demo](/bulk.gif)
 
-## 🚀 What's New in v1.2.1
-
-### Insert Order & Consistent Writes
-- New setting `resourceInsertOrderStrategy` (append | nearby | sort). Default is `nearby` for closest-match placement without disturbing existing order
-- MCP respects the same strategy via `I18N_INSERT_ORDER` to keep automation and UI in sync
-- Writes preserve original order unless you explicitly choose `sort`
-
-### Expanded MCP Tooling
-- Added tools for locales listing, translation retrieval, diffs, workspace scans, key renames/moves, and placeholder validation
-- Safer file operations: workspace-bounded paths, .gitignore-aware scans, and atomic writes
-
-> Looking for earlier highlights? See v1.2.0 below.
-
 ## 🚀 What's New in v1.2.0
 
-### Model Context Protocol (MCP) Integration
-Automate translation workflows with five production-ready MCP tools:
-- **AI-powered assistance**: Works with GitHub Copilot Agentic, Claude for VS Code, and other MCP clients
-- **Automatic registration**: Zero-configuration setup via VS Code LM API
-- **Standalone mode**: Run `npm run mcp` for use with any MCP-compatible client
-- **Smart key discovery**: New `i18n_key_references` tool locates up to 25 code references per translation key
+Concise highlights only (see full details in the Change Log below):
 
-### Enhanced JSON Structure Support
-- **Intelligent detection**: Automatically identifies flat vs. nested translation file structures
-- **Safe mutations**: Preserves original formatting when updating nested JSON files
-- **Better diagnostics**: Resource Tree, CodeLens, and hover details now accurately reflect nested lookups
-
-### Quality Improvements
-- **Stable ordering**: Sorted resource cache ensures predictable behavior across features
-- **Improved gitignore handling**: Properly respects workspace `.gitignore` during scans
-- **Flexible configuration**: Override glob patterns and regex via environment variables for custom project structures
-
-> Looking for earlier highlights? Check the Change Log below for v1.1.x feature details.
+- Model Context Protocol (MCP) integration
+	- Built‑in stdio server, works with Copilot/Claude via VS Code LM API
+	- Auto-registration in VS Code and optional standalone mode (`npm run mcp`)
+	- Key discovery tooling for smarter automation
+- Enhanced JSON structure support
+	- Auto-detect flat vs. nested locale files and preserve structure on write
+	- Accurate diagnostics across CodeLens, Hover, and Tree View
+- Quality improvements
+	- More predictable ordering, `.gitignore`‑aware scans, and flexible glob/regex configuration
 
 ## 🤖 MCP Automation Tools
 
@@ -116,6 +96,11 @@ The extension intelligently handles both flat and nested translation file struct
 - **Flexibility**: Edit deeply nested locale files without manual flattening, while keeping MCP automation fully functional
 
 ## Change Log
+
+##### v1.2.2
+- **Fixed**: MCP duplicate tool registrations in GitHub Copilot Chat by pruning stale/invalid `mcpServers` entries and keeping only the current server path at activation.
+- **Improved**: More robust MCP provider lifecycle (re-register/dispose) with safer error handling.
+- **Note**: After upgrading, use “Developer: Reload Window”. If duplicates persist, remove old entries under `github.copilotChat.mcpServers` once in Settings (JSON).
 
 ##### v1.2.1
 - **Added**: `resourceInsertOrderStrategy` setting with configurable strategies (`append`, `nearby`, `sort`) so you decide how new translations are positioned; `nearby` uses closest-match heuristics by default.
