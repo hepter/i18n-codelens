@@ -26,34 +26,64 @@ export type KeyReferenceSummary = {
   references: KeyReference[];
 };
 
-export function getWorkspaceRoot(): string {
-  // Prefer explicit env
+export function getWorkspaceRoot(workspaceRootOverride?: string): string {
+  // Precedence (first usable wins):
+  // 0) Per-call override (tool argument)
+  // 1) CLI arg: --workspaceRoot / --workspace-root (or =value)
+  // 2) Env: WORKSPACE_ROOT
+  // 3) Current working directory (process.cwd)
+  // 4) Server location fallback (dirname-based)
+  const readArg = (names: string[]): string | undefined => {
+    const argv = Array.isArray(process.argv) ? process.argv : [];
+    for (let i = 0; i < argv.length; i++) {
+      const arg = argv[i] || '';
+      for (const name of names) {
+        if (arg === name && argv[i + 1]) return argv[i + 1];
+        const prefix = `${name}=`;
+        if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+      }
+    }
+    return undefined;
+  };
+
+  const overrideRoot = workspaceRootOverride ? path.resolve(workspaceRootOverride) : undefined;
+  const argRootRaw = readArg(['--workspaceRoot', '--workspace-root']);
+  const argRoot = argRootRaw ? path.resolve(argRootRaw) : undefined;
   const envRoot = process.env.WORKSPACE_ROOT ? path.resolve(process.env.WORKSPACE_ROOT) : undefined;
-  const serverRoot = path.resolve(__dirname, '..', '..'); // project root (from out/mcp)
   const cwdRoot = path.resolve(process.cwd());
+  const serverRoot = path.resolve(__dirname, '..', '..'); // project root (from out/mcp)
 
   const isUsable = (p?: string) => {
     if (!p) return false;
     try { return fs.statSync(p).isDirectory(); } catch { return false; }
   };
 
-  let chosen: string;
-  if (isUsable(envRoot)) {
-    chosen = envRoot!;
-  } else if (isUsable(serverRoot)) {
-    chosen = serverRoot;
-  } else {
-    chosen = cwdRoot;
+  const candidates = [overrideRoot, argRoot, envRoot, cwdRoot, serverRoot];
+  let chosen = cwdRoot;
+  for (const candidate of candidates) {
+    if (isUsable(candidate)) {
+      chosen = candidate!;
+      break;
+    }
   }
-  console.log(`[i18n-codelens MCP] Using workspace root: ${chosen}`);
+  try { process.stderr.write(`[i18n-codelens MCP] Using workspace root: ${chosen}\n`); } catch { /* ignore */ }
   return chosen;
 }
 
-export async function readResourceFiles(globPattern?: string): Promise<ResourceFile[]> {
-  const root = getWorkspaceRoot();
+export async function readResourceFiles(globPattern?: string, workspaceRootOverride?: string): Promise<ResourceFile[]> {
+  const root = getWorkspaceRoot(workspaceRootOverride);
   const envCfg = getEffectiveConfigFromEnv(process.env);
   const pattern = globPattern || envCfg.resourceGlob || DEFAULT_RESOURCE_GLOB;
-  const entries = await fg(pattern, { cwd: root, absolute: true, onlyFiles: true, dot: false, ignore: envCfg.ignoreGlobs });
+  const entries = await fg(pattern, {
+    cwd: root,
+    absolute: true,
+    onlyFiles: true,
+    dot: false,
+    ignore: envCfg.ignoreGlobs,
+    followSymbolicLinks: false,
+    suppressErrors: true,
+    throwErrorOnBrokenSymbolicLink: false,
+  });
 
   entries.sort((a, b) => path.parse(a).name.localeCompare(path.parse(b).name));
 
@@ -81,8 +111,8 @@ function normalizePathCasing(target: string): string {
   return process.platform === 'win32' ? target.toLowerCase() : target;
 }
 
-function ensureSafeWorkspacePath(absPath: string): string {
-  const root = path.resolve(getWorkspaceRoot());
+function ensureSafeWorkspacePath(absPath: string, workspaceRootOverride?: string): string {
+  const root = path.resolve(getWorkspaceRoot(workspaceRootOverride));
   const normalizedRoot = normalizePathCasing(root);
   const resolved = path.resolve(absPath);
   const normalizedResolved = normalizePathCasing(resolved);
@@ -109,8 +139,8 @@ function ensureSafeWorkspacePath(absPath: string): string {
   return resolved;
 }
 
-export function writeFilePretty(absPath: string, json: any) {
-  const target = ensureSafeWorkspacePath(absPath);
+export function writeFilePretty(absPath: string, json: any, workspaceRootOverride?: string) {
+  const target = ensureSafeWorkspacePath(absPath, workspaceRootOverride);
   const content = JSON.stringify(json, null, 2) + '\n';
   const dir = path.dirname(target);
 
@@ -133,8 +163,8 @@ export function writeFilePretty(absPath: string, json: any) {
   }
 }
 
-export function loadJson(absPath: string): any {
-  const target = ensureSafeWorkspacePath(absPath);
+export function loadJson(absPath: string, workspaceRootOverride?: string): any {
+  const target = ensureSafeWorkspacePath(absPath, workspaceRootOverride);
   const raw = fs.readFileSync(target, 'utf8');
   return JSON.parse(raw);
 }
@@ -186,14 +216,15 @@ function indexToPosition(lineStarts: number[], index: number): { line: number; c
 export async function findKeyReferences(
   keys: string[],
   resourceFilePaths: Set<string>,
-  limitPerKey = 25
+  limitPerKey = 25,
+  workspaceRootOverride?: string
 ): Promise<Record<string, KeyReferenceSummary>> {
   const summaries: Record<string, KeyReferenceSummary> = {};
   if (!keys.length) {
     return summaries;
   }
 
-  const workspaceRoot = getWorkspaceRoot();
+  const workspaceRoot = getWorkspaceRoot(workspaceRootOverride);
   const envCfg = getEffectiveConfigFromEnv(process.env);
   const globPattern = envCfg.codeGlob || DEFAULT_CODE_GLOB;
   const codeFiles = await fg(globPattern, {
@@ -201,7 +232,10 @@ export async function findKeyReferences(
     absolute: true,
     onlyFiles: true,
     dot: false,
-    ignore: envCfg.ignoreGlobs
+    ignore: envCfg.ignoreGlobs,
+    followSymbolicLinks: false,
+    suppressErrors: true,
+    throwErrorOnBrokenSymbolicLink: false,
   });
 
   // Respect .gitignore if present

@@ -84,8 +84,12 @@ type NamespaceMoveSummary = {
 const PLACEHOLDER_BRACE = /\{\{\s*([\d\w.-]+)\s*\}\}/g;
 const PLACEHOLDER_CURVY = /\{\s*([\d\w.-]+)\s*\}/g;
 
+const safeStderr = (msg: string) => {
+  try { process.stderr.write(msg + '\n'); } catch { /* ignore */ }
+};
+
 let mcpLogger: (msg: string) => void = (msg: string) => {
-  try { console.log(msg); } catch { /* ignore */ }
+  safeStderr(msg);
 };
 
 function normalizeLocaleTag(input: string): string {
@@ -147,8 +151,8 @@ function describeLocale(tag: string): string | undefined {
   }
 }
 
-function relativeToWorkspace(filePath: string): string {
-  const workspaceRoot = getWorkspaceRoot();
+function relativeToWorkspace(filePath: string, workspaceDir?: string): string {
+  const workspaceRoot = getWorkspaceRoot(workspaceDir);
   const relative = path.relative(workspaceRoot, filePath);
   if (!relative || relative.startsWith('..')) {
     return filePath;
@@ -163,12 +167,12 @@ function determineWriteStructure(resource: ResourceFile, preference: StructurePr
   return preference;
 }
 
-function createResourceState(resource: ResourceFile, preference: StructurePreference): ResourceState {
+function createResourceState(resource: ResourceFile, preference: StructurePreference, workspaceDir?: string): ResourceState {
   const filePath = resource.filePath;
   const locale = normalizeLocaleTag(resource.fileName);
-  const localeFile = relativeToWorkspace(filePath);
+  const localeFile = relativeToWorkspace(filePath, workspaceDir);
   const writeStructure = determineWriteStructure(resource, preference);
-  const json = loadJson(filePath) as Record<string, unknown>;
+  const json = loadJson(filePath, workspaceDir) as Record<string, unknown>;
 
   if (writeStructure === 'flat') {
     const flatMap = flattenObject(json);
@@ -277,7 +281,7 @@ function listKeysFromState(state: ResourceState): string[] {
 }
 
 
-function createResourceManager(resources: ResourceFile[], preference: StructurePreference, insertOrder: InsertOrderStrategy) {
+function createResourceManager(resources: ResourceFile[], preference: StructurePreference, insertOrder: InsertOrderStrategy, workspaceDir?: string) {
   const localeMap = new Map<string, ResourceFile>();
   for (const resource of resources) {
     localeMap.set(normalizeLocaleTag(resource.fileName), resource);
@@ -292,7 +296,7 @@ function createResourceManager(resources: ResourceFile[], preference: StructureP
     }
     let state = stateMap.get(resource.filePath);
     if (!state) {
-      state = createResourceState(resource, preference);
+      state = createResourceState(resource, preference, workspaceDir);
       stateMap.set(resource.filePath, state);
     }
     return state;
@@ -309,13 +313,13 @@ function createResourceManager(resources: ResourceFile[], preference: StructureP
       if (state.writeStructure === 'flat') {
         const currentFlat = state.flatMap ?? {};
         const ordered = reorderFlatMap(state.initialFlat, currentFlat, state.createdKeys, insertOrder);
-        writeFilePretty(state.filePath, ordered);
+        writeFilePretty(state.filePath, ordered, workspaceDir);
       } else {
         const currentJson = state.json ?? {};
         const currentFlat = flattenObject(currentJson);
         const orderedFlat = reorderFlatMap(state.initialFlat, currentFlat, state.createdKeys, insertOrder);
         const rebuilt = unflattenObject(orderedFlat) as Record<string, unknown>;
-        writeFilePretty(state.filePath, rebuilt);
+        writeFilePretty(state.filePath, rebuilt, workspaceDir);
       }
       state.changed = false;
     }
@@ -347,9 +351,9 @@ function extractPlaceholders(value: string | undefined): Set<string> {
   return placeholders;
 }
 
-async function collectWorkspaceKeys(excludePaths: Set<string>): Promise<Set<string>> {
+async function collectWorkspaceKeys(excludePaths: Set<string>, workspaceDir?: string): Promise<Set<string>> {
   const envConfig = getEffectiveConfigFromEnv(process.env);
-  const workspaceRoot = getWorkspaceRoot();
+  const workspaceRoot = getWorkspaceRoot(workspaceDir);
   const globPattern = envConfig.codeGlob || DEFAULT_CODE_GLOB;
   const codeFiles = await fg(globPattern, {
     cwd: workspaceRoot,
@@ -357,6 +361,9 @@ async function collectWorkspaceKeys(excludePaths: Set<string>): Promise<Set<stri
     onlyFiles: true,
     dot: false,
     ignore: envConfig.ignoreGlobs,
+    followSymbolicLinks: false,
+    suppressErrors: true,
+    throwErrorOnBrokenSymbolicLink: false,
   });
 
   let ig = ignore();
@@ -400,10 +407,10 @@ async function collectWorkspaceKeys(excludePaths: Set<string>): Promise<Set<stri
   return keys;
 }
 
-async function ensureResources() {
-  const resources = await readResourceFiles();
+async function ensureResources(workspaceDir?: string) {
+  const resources = await readResourceFiles(undefined, workspaceDir);
   if (resources.length === 0) {
-    const root = getWorkspaceRoot();
+    const root = getWorkspaceRoot(workspaceDir);
     const cfg = getEffectiveConfigFromEnv(process.env);
     throw new Error(`No i18n resource files found. Adjust WORKSPACE_ROOT or I18N_GLOB. Details: WORKSPACE_ROOT='${root}', I18N_GLOB='${cfg.resourceGlob}'`);
   }
@@ -414,8 +421,10 @@ async function ensureResources() {
   return resources;
 }
 
-async function toolCheckKeys(keys: string[]): Promise<PresenceResult> {
-  const resources = await ensureResources();
+async function toolCheckKeys(args: { keys?: string[]; workspaceDir?: string }): Promise<PresenceResult> {
+  const keys = Array.isArray(args.keys) ? args.keys : [];
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const out: PresenceResult = {};
   for (const key of keys) {
     const perLang: Record<string, boolean> = {};
@@ -433,11 +442,13 @@ async function toolCheckKeys(keys: string[]): Promise<PresenceResult> {
   return out;
 }
 
-async function toolUntranslatedKeysOnPage(filePath: string): Promise<string[]> {
-  const abs = path.isAbsolute(filePath) ? filePath : path.join(getWorkspaceRoot(), filePath);
+async function toolUntranslatedKeysOnPage(args: { filePath: string; workspaceDir?: string }): Promise<string[]> {
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const filePath = args.filePath;
+  const abs = path.isAbsolute(filePath) ? filePath : path.join(getWorkspaceRoot(workspaceDir), filePath);
   if (!fs.existsSync(abs)) throw new Error(`File not found: ${abs}`);
 
-  const resources = await ensureResources();
+  const resources = await ensureResources(workspaceDir);
   // Collect keys used in file
   const usedKeys = findUntranslatedKeysInFile(abs, []);
   // Untranslated = missing in at least one resource file
@@ -449,15 +460,16 @@ async function toolUntranslatedKeysOnPage(filePath: string): Promise<string[]> {
   return missing;
 }
 
-async function toolUpsertTranslations(args: { entries?: Array<{ key: string; values: Record<string, string | undefined> }>; dryRun?: boolean }): Promise<StructureSummary> {
+async function toolUpsertTranslations(args: { entries?: Array<{ key: string; values: Record<string, string | undefined> }>; dryRun?: boolean; workspaceDir?: string }): Promise<StructureSummary> {
   const entries = Array.isArray(args.entries) ? args.entries : [];
   if (!entries.length) {
     throw new Error('entries array must contain at least one item');
   }
 
-  const resources = await ensureResources();
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const { structurePreference, insertOrderStrategy } = getEffectiveConfigFromEnv(process.env);
-  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy);
+  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy, workspaceDir);
   const results: StructureSummary['results'] = [];
   const summary: StructureSummary['summary'] = { created: 0, updated: 0, unchanged: 0, errors: 0 };
 
@@ -524,7 +536,7 @@ async function toolUpsertTranslations(args: { entries?: Array<{ key: string; val
 
       summary[outcome] += 1;
       results.push({
-        localeFile: relativeToWorkspace(state.filePath),
+      localeFile: relativeToWorkspace(state.filePath, workspaceDir),
         locale: state.locale,
         key,
         result: outcome,
@@ -539,15 +551,16 @@ async function toolUpsertTranslations(args: { entries?: Array<{ key: string; val
   return { summary, results };
 }
 
-async function toolDeleteKey(args: { key: string; locales?: string[]; dryRun?: boolean }): Promise<{ deletedFrom: string[] }> {
+async function toolDeleteKey(args: { key: string; locales?: string[]; dryRun?: boolean; workspaceDir?: string }): Promise<{ deletedFrom: string[] }> {
   const key = typeof args.key === 'string' ? args.key.trim() : '';
   if (!key) {
     throw new Error('key is required');
   }
 
-  const resources = await ensureResources();
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const { structurePreference, insertOrderStrategy } = getEffectiveConfigFromEnv(process.env);
-  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy);
+  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy, workspaceDir);
   const filter = new Set((args.locales || []).map(normalizeLocaleTag).filter(Boolean));
   const deletedFrom: string[] = [];
 
@@ -576,13 +589,14 @@ async function toolDeleteKey(args: { key: string; locales?: string[]; dryRun?: b
   return { deletedFrom };
 }
 
-async function toolListLocales() {
-  const resources = await ensureResources();
+async function toolListLocales(args: { workspaceDir?: string } = {}) {
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const locales = resources.map(res => {
     const locale = normalizeLocaleTag(res.fileName);
     return {
       locale,
-      localeFile: relativeToWorkspace(res.filePath),
+      localeFile: relativeToWorkspace(res.filePath, workspaceDir),
       description: describeLocale(locale),
       isNested: res.isNested,
       keyCount: Object.keys(res.keyValuePairs).length,
@@ -594,13 +608,14 @@ async function toolListLocales() {
   return { languages, locales };
 }
 
-async function toolGetTranslations(args: { keys?: string[]; locales?: string[] }) {
+async function toolGetTranslations(args: { keys?: string[]; locales?: string[]; workspaceDir?: string }) {
   const keys = Array.isArray(args.keys) ? args.keys.map(key => key.trim()).filter(Boolean) : [];
   if (!keys.length) {
     throw new Error('keys array must contain at least one key');
   }
 
-  const resources = await ensureResources();
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const requestedLocales = (args.locales || resources.map(res => res.fileName)).map(normalizeLocaleTag).filter(Boolean);
   const localeSet = new Set(requestedLocales);
   const localeMap = new Map(resources.map(res => [normalizeLocaleTag(res.fileName), res] as const));
@@ -623,7 +638,7 @@ async function toolGetTranslations(args: { keys?: string[]; locales?: string[] }
   return { locales: effectiveLocales, translations };
 }
 
-async function toolDiffLocales(args: { base: string; compare: string[] }) {
+async function toolDiffLocales(args: { base: string; compare: string[]; workspaceDir?: string }) {
   const baseLocale = normalizeLocaleTag(args.base);
   if (!baseLocale) {
     throw new Error('base locale is required');
@@ -633,7 +648,8 @@ async function toolDiffLocales(args: { base: string; compare: string[] }) {
     throw new Error('compare array must contain at least one locale');
   }
 
-  const resources = await ensureResources();
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const localeMap = new Map(resources.map(res => [normalizeLocaleTag(res.fileName), res] as const));
   const baseResource = localeMap.get(baseLocale);
   if (!baseResource) {
@@ -687,10 +703,11 @@ async function toolDiffLocales(args: { base: string; compare: string[] }) {
   return { base: baseLocale, comparisons };
 }
 
-async function toolScanWorkspaceMissing() {
-  const resources = await ensureResources();
+async function toolScanWorkspaceMissing(args: { workspaceDir?: string } = {}) {
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const resourcePaths = new Set(resources.map(res => path.normalize(res.filePath)));
-  const keysInCode = await collectWorkspaceKeys(resourcePaths);
+  const keysInCode = await collectWorkspaceKeys(resourcePaths, workspaceDir);
 
   const missing: Array<{
     key: string;
@@ -732,7 +749,7 @@ async function toolScanWorkspaceMissing() {
   return { totalMissing: missing.length, missing };
 }
 
-async function toolRenameKey(args: { from: string; to: string; locales?: string[]; dryRun?: boolean }): Promise<RenameSummary> {
+async function toolRenameKey(args: { from: string; to: string; locales?: string[]; dryRun?: boolean; workspaceDir?: string }): Promise<RenameSummary> {
   const fromKey = typeof args.from === 'string' ? args.from.trim() : '';
   const toKey = typeof args.to === 'string' ? args.to.trim() : '';
 
@@ -744,9 +761,10 @@ async function toolRenameKey(args: { from: string; to: string; locales?: string[
     throw new Error('from and to keys must differ');
   }
 
-  const resources = await ensureResources();
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const { structurePreference, insertOrderStrategy } = getEffectiveConfigFromEnv(process.env);
-  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy);
+  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy, workspaceDir);
   const filter = new Set((args.locales || []).map(normalizeLocaleTag).filter(Boolean));
 
   const results: RenameSummary['results'] = [];
@@ -808,7 +826,7 @@ async function toolRenameKey(args: { from: string; to: string; locales?: string[
   return { summary, results };
 }
 
-async function toolMoveNamespace(args: { from: string; to: string; locales?: string[]; dryRun?: boolean }): Promise<NamespaceMoveSummary> {
+async function toolMoveNamespace(args: { from: string; to: string; locales?: string[]; dryRun?: boolean; workspaceDir?: string }): Promise<NamespaceMoveSummary> {
   const fromPrefixRaw = typeof args.from === 'string' ? args.from.trim() : '';
   const toPrefixRaw = typeof args.to === 'string' ? args.to.trim() : '';
 
@@ -819,9 +837,10 @@ async function toolMoveNamespace(args: { from: string; to: string; locales?: str
   const fromPrefix = fromPrefixRaw.endsWith('.') ? fromPrefixRaw : `${fromPrefixRaw}.`;
   const toPrefix = toPrefixRaw.endsWith('.') ? toPrefixRaw : `${toPrefixRaw}.`;
 
-  const resources = await ensureResources();
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const { structurePreference, insertOrderStrategy } = getEffectiveConfigFromEnv(process.env);
-  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy);
+  const manager = createResourceManager(resources, structurePreference, insertOrderStrategy, workspaceDir);
   const filter = new Set((args.locales || []).map(normalizeLocaleTag).filter(Boolean));
 
   const results: NamespaceMoveSummary['results'] = [];
@@ -895,8 +914,9 @@ async function toolMoveNamespace(args: { from: string; to: string; locales?: str
   return { summary, results };
 }
 
-async function toolValidatePlaceholders(args: { keys?: string[]; locales?: string[]; baseLocale?: string }) {
-  const resources = await ensureResources();
+async function toolValidatePlaceholders(args: { keys?: string[]; locales?: string[]; baseLocale?: string; workspaceDir?: string }) {
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const localeMap = new Map(resources.map(res => [normalizeLocaleTag(res.fileName), res] as const));
   const selectedLocales = (args.locales ? args.locales.map(normalizeLocaleTag) : Array.from(localeMap.keys())).filter(Boolean);
   if (!selectedLocales.length) {
@@ -946,17 +966,19 @@ async function toolValidatePlaceholders(args: { keys?: string[]; locales?: strin
   };
 }
 
-async function toolKeyReferences(keys: string[], limit?: number) {
-  const trimmedKeys = Array.from(new Set((keys || []).map(k => typeof k === 'string' ? k.trim() : '').filter(Boolean)));
+async function toolKeyReferences(args: { keys?: string[]; limit?: number; workspaceDir?: string }) {
+  const keys = Array.isArray(args.keys) ? args.keys : [];
+  const trimmedKeys = Array.from(new Set(keys.map(k => typeof k === 'string' ? k.trim() : '').filter(Boolean)));
   if (!trimmedKeys.length) {
     throw new Error('keys array must contain at least one non-empty string');
   }
 
-  const resources = await ensureResources();
+  const workspaceDir = typeof args.workspaceDir === 'string' && args.workspaceDir.trim() ? args.workspaceDir : undefined;
+  const resources = await ensureResources(workspaceDir);
   const resourcePaths = new Set(resources.map(res => res.filePath));
-  const maxPerKey = Math.min(Math.max(limit ?? 25, 1), 25);
+  const maxPerKey = Math.min(Math.max(args.limit ?? 25, 1), 25);
 
-  return findKeyReferences(trimmedKeys, resourcePaths, maxPerKey);
+  return findKeyReferences(trimmedKeys, resourcePaths, maxPerKey, workspaceDir);
 }
 
 async function main() {
@@ -999,7 +1021,7 @@ async function main() {
     };
     connect();
     mcpLogger = (msg: string) => {
-      try { console.log(msg); } catch { /* ignore */ }
+      safeStderr(msg);
       if (socket && socket.writable) {
         try { socket.write(msg + '\n'); } catch { /* ignore */ }
       } else {
@@ -1033,7 +1055,9 @@ async function main() {
       description: 'Returns all detected locale resource files with normalized locale tags and human-friendly descriptions.',
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: {
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
+        },
         additionalProperties: false
       }
     },
@@ -1042,7 +1066,10 @@ async function main() {
       description: 'Accepts an array of translation keys and responds with `{ key: { <locale-file>: true|false } }`. Keys ending with a dot are treated as namespace prefixes.',
       inputSchema: {
         type: 'object',
-        properties: { keys: { type: 'array', items: { type: 'string' }, minItems: 1 } },
+        properties: {
+          keys: { type: 'array', items: { type: 'string' }, minItems: 1 },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
+        },
         required: ['keys']
       }
     },
@@ -1053,7 +1080,8 @@ async function main() {
         type: 'object',
         properties: {
           keys: { type: 'array', items: { type: 'string' }, minItems: 1 },
-          locales: { type: 'array', items: { type: 'string' } }
+          locales: { type: 'array', items: { type: 'string' } },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         required: ['keys']
       }
@@ -1075,7 +1103,8 @@ async function main() {
               required: ['key', 'values']
             }
           },
-          dryRun: { type: 'boolean' }
+          dryRun: { type: 'boolean' },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         required: ['entries']
       }
@@ -1088,7 +1117,8 @@ async function main() {
         properties: {
           key: { type: 'string' },
           locales: { type: 'array', items: { type: 'string' } },
-          dryRun: { type: 'boolean' }
+          dryRun: { type: 'boolean' },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         required: ['key']
       }
@@ -1100,7 +1130,8 @@ async function main() {
         type: 'object',
         properties: {
           base: { type: 'string' },
-          compare: { type: 'array', items: { type: 'string' }, minItems: 1 }
+          compare: { type: 'array', items: { type: 'string' }, minItems: 1 },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         required: ['base', 'compare']
       }
@@ -1110,7 +1141,9 @@ async function main() {
       description: 'Scan the workspace for keys referenced in code but missing from at least one locale resource file.',
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: {
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
+        },
         additionalProperties: false
       }
     },
@@ -1129,7 +1162,8 @@ async function main() {
             type: 'number',
             minimum: 1,
             maximum: 25
-          }
+          },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         required: ['keys']
       }
@@ -1143,7 +1177,8 @@ async function main() {
           from: { type: 'string' },
           to: { type: 'string' },
           locales: { type: 'array', items: { type: 'string' } },
-          dryRun: { type: 'boolean' }
+          dryRun: { type: 'boolean' },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         required: ['from', 'to']
       }
@@ -1157,7 +1192,8 @@ async function main() {
           from: { type: 'string' },
           to: { type: 'string' },
           locales: { type: 'array', items: { type: 'string' } },
-          dryRun: { type: 'boolean' }
+          dryRun: { type: 'boolean' },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         required: ['from', 'to']
       }
@@ -1170,7 +1206,8 @@ async function main() {
         properties: {
           keys: { type: 'array', items: { type: 'string' } },
           locales: { type: 'array', items: { type: 'string' } },
-          baseLocale: { type: 'string' }
+          baseLocale: { type: 'string' },
+          workspaceDir: { type: 'string', description: 'Optional workspace root directory to scan. Defaults to CLI arg/WORKSPACE_ROOT/process.cwd().' }
         },
         additionalProperties: false
       }
@@ -1209,12 +1246,12 @@ async function main() {
       mcpLogger(`[i18n-codelens MCP] tool.start name=${name}${argSummary ? ' ' + argSummary : ''}`);
 
       if (name === 'i18n_list_locales') {
-        const result = await toolListLocales();
+        const result = await toolListLocales(args);
         try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} locales=${result.locales.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_check_keys') {
-        const result = await toolCheckKeys(args.keys || []);
+        const result = await toolCheckKeys(args);
         try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} keys=${Object.keys(result).length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
@@ -1239,17 +1276,17 @@ async function main() {
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_scan_workspace_missing') {
-        const result = await toolScanWorkspaceMissing();
+        const result = await toolScanWorkspaceMissing(args);
         try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} totalMissing=${result.totalMissing} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       if (name === 'i18n_untranslated_keys_on_page') {
-        const keys = await toolUntranslatedKeysOnPage(args.filePath);
+        const keys = await toolUntranslatedKeysOnPage(args);
         try { mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} keys=${keys.length} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify({ keys }) }] };
       }
       if (name === 'i18n_key_references') {
-        const result = await toolKeyReferences(args.keys || [], args.limit);
+        const result = await toolKeyReferences(args);
         try { const totals = Object.values(result).reduce((a: any, b: any) => a + (b?.total ?? 0), 0); mcpLogger(`[i18n-codelens MCP] tool.ok name=${name} keys=${(args.keys || []).length} refs=${totals} (${Date.now() - started}ms)`); } catch { /* ignore */ }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }

@@ -60,13 +60,18 @@ Run `npm run mcp` or `node ./out/mcp/server.js` from the workspace root to start
 
 Customize server behavior with these environment variables:
 
-- `WORKSPACE_ROOT` — Absolute path to scan (defaults to current workspace)
 - `I18N_GLOB` — Pattern for resource files (defaults to `**/locales/**/*.json`)
 - `I18N_CODE_REGEX` — Custom regex for detecting translation keys
 - `I18N_CODE_GLOB` — Pattern for code files (defaults to `**/*.{ts,tsx,js,jsx}`)
 - `I18N_IGNORE` — Additional glob patterns to ignore (e.g., `**/dist/**;**/.next/**`); `.gitignore` is also respected
 - `I18N_STRUCTURE` — Controls write structure (`auto` | `flat` | `nested`)
 - `I18N_INSERT_ORDER` — Controls insert order (`append` | `nearby` | `sort`)
+
+You can also override the workspace root via CLI args:
+
+- `--workspaceRoot <path>` (or `--workspace-root <path>`, including `--workspaceRoot=<path>`)
+
+Workspace root resolution order is: CLI arg → `WORKSPACE_ROOT` env → `process.cwd()` → server path fallback.
 
 > **Note**: Auto-registration requires VS Code 1.96.0 or newer. For older versions, use standalone mode with `npm run mcp`.
 
@@ -80,11 +85,56 @@ Customize server behavior with these environment variables:
 | `i18n_delete_key` | Removes a translation key from all locale files (supports locale filter and dry-run) |
 | `i18n_diff_locales` | Diffs base vs. compare locales: missing/extra keys and placeholder parity |
 | `i18n_scan_workspace_missing` | Scans code for referenced keys missing in resources and surfaces references |
+| `i18n_key_references` | Surfaces non-locale code references for given keys with file/line/column details |
 | `i18n_rename_key` | Renames a key across all locales with collision checks (supports dry-run) |
 | `i18n_move_namespace` | Moves a key prefix (namespace) across locales with safety checks (supports dry-run) |
 | `i18n_validate_placeholders` | Validates placeholder consistency across locales |
 
 These tools integrate with AI workflows to automate translation validation, identify gaps, and streamline localization management.
+
+### MCP Client Setup Examples
+
+#### GitHub Copilot (VS Code)
+
+If the extension is installed and active, MCP is auto-registered. Manual `mcp.json` example:
+
+```json
+{
+	"servers": {
+		"i18n-codelens": {
+			"type": "stdio",
+			"command": "npx",
+			"args": ["-y", "i18n-codelens-mcp"]
+		}
+	}
+}
+```
+
+#### Claude Code CLI
+
+```bash
+claude mcp add --transport stdio i18n-codelens -- npx -y i18n-codelens-mcp
+```
+
+#### Gemini CLI
+
+```bash
+gemini mcp add i18n-codelens npx -y i18n-codelens-mcp
+```
+
+#### OpenAI Codex CLI
+
+```bash
+codex mcp add i18n-codelens -- npx -y i18n-codelens-mcp
+```
+
+Or manually in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.i18n-codelens]
+command = "npx"
+args = ["-y", "i18n-codelens-mcp"]
+```
 
 ## 🧱 Flat & Nested JSON Support
 
@@ -96,6 +146,13 @@ The extension intelligently handles both flat and nested translation file struct
 - **Flexibility**: Edit deeply nested locale files without manual flattening, while keeping MCP automation fully functional
 
 ## Change Log
+
+##### v1.2.4
+- **Fixed**: Standalone MCP now prefers `process.cwd()` as the workspace root, improving multi-project usage in external MCP clients.
+- **Added**: CLI override for workspace root via `--workspaceRoot` / `--workspace-root` (also supports `--workspaceRoot=<path>`).
+- **Fixed**: Standalone MCP logging uses stderr-safe output to avoid stdio protocol interference.
+- **Fixed**: Workspace scanning now skips symbolic links and suppresses traversal errors, preventing `EPERM`/broken-link scan failures.
+- **Improved**: MCP file operations enforce workspace-bound writes/reads and reject symlink-based path escapes.
 
 ##### v1.2.3
 - Stabilized MCP registration (single supported constructor, no fallbacks, with new log channel for MCP Server)
