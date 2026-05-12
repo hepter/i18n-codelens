@@ -2,6 +2,7 @@ import { window } from 'vscode';
 import SettingUtils from '../SettingUtils';
 import { addNewOrUpdateLanguageTranslation, capitalizeFirstLetter, } from '../Utils';
 import { Logger } from '../Utils';
+import { collectTranslationsWithWebview } from './TranslationInputWebview';
 
 export default async function ActionAddLanguageResource(key: string, missingTranslationList: string[] = []) {
 	try {
@@ -21,6 +22,29 @@ export default async function ActionAddLanguageResource(key: string, missingTran
 		}
 
 		Logger.info(`Need to add translations for ${languageFileNames.length} languages: ${languageFileNames.join(', ')}`);
+
+		if (SettingUtils.isExperimentalMultilineTranslationInput()) {
+			const fallbackValue = capitalizeFirstLetter(key.replace(/\./g, " "));
+			const inputValues = await collectTranslationsWithWebview(
+				key,
+				languageFileNames.map(language => ({
+					language,
+					value: fallbackValue,
+					placeholder: `Enter ${language} translation...`,
+				})),
+				'add',
+			);
+
+			if (!inputValues) {
+				Logger.warn('User cancelled multiline language input');
+				window.showInformationMessage("Language input aborted!");
+				return;
+			}
+
+			Logger.info(`All translations collected from multiline input, applying changes...`);
+			await addNewOrUpdateLanguageTranslation(key, inputValues);
+			return;
+		}
 
 		for (const languageKey of languageFileNames) {
 			try {

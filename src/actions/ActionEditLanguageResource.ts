@@ -2,6 +2,7 @@ import { window } from 'vscode';
 import SettingUtils from '../SettingUtils';
 import { addNewOrUpdateLanguageTranslation } from '../Utils';
 import { Logger } from '../Utils';
+import { collectTranslationsWithWebview } from './TranslationInputWebview';
 
 export default async function ActionEditLanguageResource(key: string, languageKeys: string[] | undefined) {
 	try {
@@ -27,6 +28,38 @@ export default async function ActionEditLanguageResource(key: string, languageKe
 		let counter = 1;
 		const newTranslationsData: { [key: string]: string } = {};
 		let isAborted = false;
+
+		if (SettingUtils.isExperimentalMultilineTranslationInput()) {
+			const inputValues = await collectTranslationsWithWebview(
+				key,
+				existResourceList.map(resource => ({
+					language: resource.fileName,
+					value: resource.keyValuePairs[key],
+					placeholder: `Enter ${resource.fileName} translation...`,
+				})),
+				'edit',
+			);
+
+			if (!inputValues) {
+				Logger.warn('User cancelled multiline language modification');
+				window.showInformationMessage("Language text modification aborted!");
+				return;
+			}
+
+			for (const resource of existResourceList) {
+				if (inputValues[resource.fileName] !== resource.keyValuePairs[key]) {
+					newTranslationsData[resource.fileName] = inputValues[resource.fileName];
+				}
+			}
+
+			if (Object.keys(newTranslationsData).length) {
+				Logger.info(`Applying ${Object.keys(newTranslationsData).length} translation changes from multiline input...`);
+				await addNewOrUpdateLanguageTranslation(key, newTranslationsData, true);
+			} else {
+				Logger.info(`No changes were made to translations`);
+			}
+			return;
+		}
 
 		for (const resource of existResourceList) {
 			try {

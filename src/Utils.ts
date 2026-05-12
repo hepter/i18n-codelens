@@ -33,14 +33,15 @@ async function applyEditToFlatStructure(fileUri: vscode.Uri, rawData: string, ne
 	const resourceLineRegex = new RegExp(`(?<=["'])${nearestResourceKey}(?=["']).*\r?(?:\n|$)`);
 	const matchGroups = rawData.match(lineRegex);
 
-	let newLine = `\n  "${resourceKey}": "${resourceData}",`;
+	const valueLiteral = JSON.stringify(resourceData);
+	let newLine = `\n  "${resourceKey}": ${valueLiteral},`;
 	if (matchGroups?.length == 5) { // 4 groups + 1 for the whole match
 		const space = matchGroups[1];
 		const quote = matchGroups[2];
 		const comma = matchGroups[3];
 		const newLineChar = matchGroups[4];
 
-		newLine = `${newLineChar}${space}${quote}${resourceKey}${quote}: ${quote}${resourceData}${quote}${comma}`;
+		newLine = `${newLineChar}${space}${quote}${resourceKey}${quote}: ${valueLiteral}${comma}`;
 	}
 
 	let positionLine = 0;

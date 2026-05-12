@@ -15,6 +15,7 @@ export const settings = {
 	structureStrategy: "resourceStructureStrategy",
 	insertOrderStrategy: "resourceInsertOrderStrategy",
 	logLevel: "logLevel",
+	experimentalMultilineTranslationInput: "experimental.multilineTranslationInput",
 };
 
 export const actions = {

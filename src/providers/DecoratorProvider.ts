@@ -16,7 +16,7 @@ export class DecoratorProvider implements vscode.Disposable {
 	}
 
 	private disposables: vscode.Disposable[] = [];
-	private timeout: number | undefined = undefined;
+	private timeout: ReturnType<typeof setTimeout> | undefined = undefined;
 	private activeEditor = vscode.window.activeTextEditor;
 	private resourceExistDecorationType!: vscode.TextEditorDecorationType;
 	private resourceNotFoundDecorationType!: vscode.TextEditorDecorationType;
@@ -121,7 +121,11 @@ export class DecoratorProvider implements vscode.Disposable {
 			this.triggerUpdateDecorations(true);
 		}, null, this.disposables);
 
-	}
+		SettingUtils.onDidChangeResourceLocations(e => {
+			this.triggerUpdateDecorations(true);
+		}, null, this.disposables);
+
+	};
 
 
 	public updateDecorations = async (textEditor?: vscode.TextEditor) => {
@@ -132,16 +136,18 @@ export class DecoratorProvider implements vscode.Disposable {
 				return;
 			}
 
-			if (SettingUtils.isResourceFilePath(activeEditor.document?.uri?.path)) {
+			const documentPath = activeEditor.document.uri.fsPath;
+
+			if (SettingUtils.isResourceFilePath(documentPath)) {
 				this.updateDecorationForResource(activeEditor);
 			}
-			else if (SettingUtils.isCodeFilePath(activeEditor.document?.uri?.path)) {
+			else if (SettingUtils.isCodeFilePath(documentPath)) {
 				this.updateDecorationForCode(activeEditor);
 			}
 		} catch (error) {
 			Logger.error("ERROR in updateDecorations:", error);
 		}
-	}
+	};
 
 	triggerUpdateDecorations = (throttle: boolean) => {
 		if (this.timeout) {
@@ -153,7 +159,7 @@ export class DecoratorProvider implements vscode.Disposable {
 		} else {
 			this.updateDecorations();
 		}
-	}
+	};
 
 
 	updateDecorationForCode(textEditor: vscode.TextEditor) {
@@ -168,19 +174,21 @@ export class DecoratorProvider implements vscode.Disposable {
 			const warnResources: vscode.DecorationOptions[] = [];
 			let match;
 			while ((match = resourceRegex.exec(text))) {
-				const startPos = textEditor.document.positionAt(match.index);
-				const endPos = textEditor.document.positionAt(match.index + match[0].length);
+				const key = match.groups?.key ?? match[0];
+				const startOffset = this.getMatchedKeyOffset(match, key);
+				const startPos = textEditor.document.positionAt(startOffset);
+				const endPos = textEditor.document.positionAt(startOffset + key.length);
 				const range = new vscode.Range(startPos, endPos);
-				const word = textEditor.document.getText(range);
 				const decoration = { range };
 
 				let matchCount = 0;
 				resources.forEach((item) => {
-					if (item.keyValuePairs[word]) {
+					if (Object.prototype.hasOwnProperty.call(item.keyValuePairs, key)) {
 						matchCount++;
 					}
 				});
-				const isAllResourcesExist = matchCount == resources.length;
+				const isAllResourcesExist = resources.length > 0 && matchCount == resources.length;
+				Logger.debug(`Decoration match '${key}': ${matchCount}/${resources.length} resource files`);
 				if (isAllResourcesExist) {
 					successResources.push(decoration);
 				} else if (matchCount > 0) {
@@ -197,6 +205,15 @@ export class DecoratorProvider implements vscode.Disposable {
 		} catch (error) {
 			Logger.error("ERROR in updateDecorationForCode:", error);
 		}
+	}
+
+	private getMatchedKeyOffset(match: RegExpExecArray, key: string): number {
+		if (match[0] === key) {
+			return match.index;
+		}
+
+		const relativeOffset = match[0].indexOf(key);
+		return relativeOffset >= 0 ? match.index + relativeOffset : match.index;
 	}
 
 	updateDecorationForResource(textEditor: vscode.TextEditor) {

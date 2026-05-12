@@ -8,7 +8,15 @@
 		"editor.lineHighlightBorder": "#9fced11f",
 		"activityBar.background": "#143323",
 		"titleBar.activeBackground": "#1C4831",
-		"titleBar.activeForeground": "#F7FCFA"
+		"titleBar.activeForeground": "#F7FCFA",
+		"titleBar.inactiveBackground": "#143323",
+		"titleBar.inactiveForeground": "#F7FCFA",
+		"statusBar.background": "#143323",
+		"statusBar.foreground": "#F7FCFA",
+		"statusBar.debuggingBackground": "#143323",
+		"statusBar.debuggingForeground": "#F7FCFA",
+		"statusBar.noFolderBackground": "#143323",
+		"statusBar.noFolderForeground": "#F7FCFA"
 	},
 	"chat.tools.terminal.autoApprove": {
 		"*": true

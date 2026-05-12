@@ -1,5 +1,5 @@
 import { debounce } from 'lodash';
-import { IMinimatch, Minimatch } from 'minimatch';
+import { Minimatch } from 'minimatch';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -27,7 +27,7 @@ export default class SettingUtils implements vscode.Disposable {
 	private static disposables: vscode.Disposable[] = [];
 
 	private globPattern!: string;
-	private mm!: IMinimatch;
+	private mm!: Minimatch;
 	private codeRegex!: RegExp;
 	private codeGlobPattern = "**/*.{ts,tsx,js,jsx}";
 	private resourceDefinitionLocations = new Map<string, vscode.Location[]>();
@@ -36,6 +36,8 @@ export default class SettingUtils implements vscode.Disposable {
 	private resourceLineRegex = /(?<=["'])(?<key>[\w\d\- _.]+?)(?=["'])/g;
 	private codeFileRegex = /^(.(?!.*node_modules))*\.(jsx?|tsx?)$/;
 	private gitIgnore!: ignore.Ignore;
+	private ignoreGlobPatterns: string[] = [excludePattern];
+	private ignoreGlobMatchers: Minimatch[] = [];
 	private resourceStructureType: 'flat' | 'nested' = 'flat';
 	private resourceStructureStrategy: StructurePreference = 'auto';
 
@@ -76,9 +78,12 @@ export default class SettingUtils implements vscode.Disposable {
 		const root = folders[0].uri.fsPath;
 		const giPath = path.join(root, '.gitignore');
 		try {
-			const watcher = fs.watch(giPath, () => {
+			const watcher = fs.watch(giPath, async () => {
 				Logger.info('♻️ .gitignore changed, reloading...');
 				this.loadGitignore();
+				await this.refreshResourceFromFiles(true);
+				await this.findAllResourceReferencesFromJson();
+				await this.findAllResourceReferencesFromCodeFiles();
 			});
 			SettingUtils.disposables.push({ dispose: () => watcher.close() });
 		} catch {
@@ -110,6 +115,7 @@ export default class SettingUtils implements vscode.Disposable {
 			this.readAndListenConfigs();
 			this.refreshStructureStrategyFromConfig();
 			this.refreshGlobFromConfig();
+			this.refreshIgnoreGlobsFromConfig();
 			this.refreshRegexFromConfig();
 			this.refreshCodeGlobFromConfig();
 			this.refreshCodeFileRegexFromConfig();
@@ -162,6 +168,13 @@ export default class SettingUtils implements vscode.Disposable {
 						this.refreshCodeGlobFromConfig();
 						await this.findAllResourceReferencesFromCodeFiles();
 						isChanged = true;
+					} else if (e.affectsConfiguration(settings.ignoreGlobs)) {
+						Logger.info("Ignore globs configuration changed, refreshing resources and code references...");
+						this.refreshIgnoreGlobsFromConfig();
+						await this.refreshResourceFromFiles(true);
+						await this.findAllResourceReferencesFromJson();
+						await this.findAllResourceReferencesFromCodeFiles();
+						isChanged = true;
 					} else if (e.affectsConfiguration(settings.structureStrategy)) {
 						Logger.info("Resource structure strategy configuration changed, refreshing...");
 						this.refreshStructureStrategyFromConfig();
@@ -195,6 +208,20 @@ export default class SettingUtils implements vscode.Disposable {
 			this.globPattern = "**/locales/**/*.json";
 			this.mm = new Minimatch(this.globPattern);
 			vscode.window.showWarningMessage("Failed to load glob pattern config, using default.");
+		}
+	}
+
+	private refreshIgnoreGlobsFromConfig() {
+		try {
+			const configValue = vscode.workspace.getConfiguration(extensionName).get<string[]>(settings.ignoreGlobs, [excludePattern]);
+			this.ignoreGlobPatterns = Array.from(new Set([excludePattern, ...(configValue ?? [])].filter(Boolean)));
+			this.ignoreGlobMatchers = this.ignoreGlobPatterns.map(pattern => new Minimatch(pattern, { dot: true }));
+			Logger.info(`Setting ignore globs: ${this.ignoreGlobPatterns.join('; ')}`);
+		} catch (error) {
+			Logger.error("ERROR refreshing ignore globs from config:", error);
+			this.ignoreGlobPatterns = [excludePattern];
+			this.ignoreGlobMatchers = [new Minimatch(excludePattern, { dot: true })];
+			vscode.window.showWarningMessage("Failed to load ignore globs config, using default.");
 		}
 	}
 
@@ -255,14 +282,74 @@ export default class SettingUtils implements vscode.Disposable {
 			vscode.window.showWarningMessage("Failed to load code file regex config, using default.");
 		}
 	}
+
+	private getWorkspaceRelativePath(filePath: string): string | undefined {
+		const folders = vscode.workspace.workspaceFolders;
+		const root = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
+		if (!root) return undefined;
+		const normalizedPath = this.normalizePathInput(filePath);
+		const relativePath = path.relative(root, normalizedPath).replace(/\\/g, '/');
+		if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) return undefined;
+		return relativePath;
+	}
+
+	private normalizePathInput(filePath: string): string {
+		try {
+			return decodeURIComponent(filePath);
+		} catch {
+			return filePath;
+		}
+	}
+
+	private getGlobComparablePath(filePath: string): string {
+		return this.getWorkspaceRelativePath(filePath) ?? this.normalizePathInput(filePath).replace(/\\/g, '/');
+	}
+
+	private isIgnoredWorkspacePath(filePath: string, reason: string): boolean {
+		const relativePath = this.getWorkspaceRelativePath(filePath);
+		if (!relativePath) return false;
+
+		if (this.gitIgnore.ignores(relativePath)) {
+			Logger.info(`Ignoring ${reason} path from .gitignore: ${relativePath}`);
+			return true;
+		}
+
+		const ignoredByGlob = this.ignoreGlobMatchers.find(matcher => matcher.match(relativePath));
+		if (ignoredByGlob) {
+			Logger.info(`Ignoring ${reason} path from ignoreGlobs (${ignoredByGlob.pattern}): ${relativePath}`);
+			return true;
+		}
+
+		return false;
+	}
+
+	private logDuplicateResourceNames(resourceUris: vscode.Uri[]) {
+		const byName = new Map<string, string[]>();
+		for (const uri of resourceUris) {
+			const fileName = path.parse(uri.fsPath).name;
+			const paths = byName.get(fileName) ?? [];
+			paths.push(this.getWorkspaceRelativePath(uri.fsPath) ?? uri.fsPath);
+			byName.set(fileName, paths);
+		}
+
+		for (const [fileName, paths] of byName) {
+			if (paths.length > 1) {
+				Logger.warn(`Duplicate resource locale '${fileName}' detected in ${paths.length} files: ${paths.join(', ')}`);
+			}
+		}
+	}
+
 	private async refreshResourceFromFiles(noCache = false) {
 		try {
 			Logger.info(`Scanning for resource files with pattern: ${this.globPattern}`);
 			const vscodeUriList = await vscode.workspace.findFiles(this.globPattern, excludePattern);
-			Logger.info(`Found ${vscodeUriList.length} resource files`);
+			Logger.info(`Found ${vscodeUriList.length} resource file candidates`);
+			const resourceUris = vscodeUriList.filter(uri => !this.isIgnoredWorkspacePath(uri.fsPath, 'resource scan'));
+			Logger.info(`Using ${resourceUris.length} resource files after ignore filtering`);
+			this.logDuplicateResourceNames(resourceUris);
 
-			if (vscodeUriList.length > 0) {
-				vscodeUriList.sort((a, b) => {
+			if (resourceUris.length > 0) {
+				resourceUris.sort((a, b) => {
 					const aName = path.parse(a.fsPath).name.toLowerCase();
 					const bName = path.parse(b.fsPath).name.toLowerCase();
 					return aName.localeCompare(bName);
@@ -271,16 +358,19 @@ export default class SettingUtils implements vscode.Disposable {
 
 			if (noCache) {
 				Logger.info("Clearing resource cache");
+				for (const resource of this.languageResourcesFilesCache) {
+					this.removeLocationsByUri(resource.uri);
+				}
 				this.languageResourcesFilesCache = [];
 			}
 
-			await Promise.all(vscodeUriList.map(uri => this.insertOrUpdateResourceByUri(uri)));
+			await Promise.all(resourceUris.map(uri => this.insertOrUpdateResourceByUri(uri)));
 
 			// Detect structure type after processing all files
 			this.updateDetectedStructureType();
 			Logger.info(`Detected resource structure type: ${this.resourceStructureType}`);
 
-			Logger.info(`Successfully processed ${vscodeUriList.length} resource files`);
+			Logger.info(`Successfully processed ${resourceUris.length} resource files`);
 		} catch (error) {
 			Logger.error("ERROR refreshing resources from files:", error);
 			throw error;
@@ -380,6 +470,12 @@ export default class SettingUtils implements vscode.Disposable {
 					const file = path.parse(e.fsPath);
 					Logger.info(`Resource file '${file.name}' was affected by '${type}' event`);
 
+					if (type !== "delete" && this.isIgnoredWorkspacePath(e.fsPath, `resource ${type} event`)) {
+						await this.insertOrUpdateResourceByUri(e, true);
+						this.removeLocationsByUri(e);
+						return;
+					}
+
 					await this.insertOrUpdateResourceByUri(e, type === "delete");
 
 					if (type === "delete") {
@@ -419,7 +515,7 @@ export default class SettingUtils implements vscode.Disposable {
 			const watcher = vscode.workspace.createFileSystemWatcher(this.codeGlobPattern);
 			const watcherHandler = (type: string) => async (e: vscode.Uri) => {
 				try {
-					if (/^(.(?!.*node_modules))*\.(jsx?|tsx?)$/.test(e.fsPath)) {
+					if (/^(.(?!.*node_modules))*\.(jsx?|tsx?)$/.test(e.fsPath) && !this.isIgnoredWorkspacePath(e.fsPath, `code ${type} event`)) {
 						const fileName = path.basename(e.fsPath);
 						Logger.info(`Code file '${fileName}' was affected by '${type}' event`);
 
@@ -464,14 +560,7 @@ export default class SettingUtils implements vscode.Disposable {
 
 	private async findAllResourceReferencesFromCodeFiles() {
 		const allFiles = await vscode.workspace.findFiles(this.codeGlobPattern, excludePattern);
-		const folders = vscode.workspace.workspaceFolders;
-		const root = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
-
-		const codeFiles = allFiles.filter(uri => {
-			if (!root) return true; // No workspace root; skip .gitignore relative checks
-			const rel = path.relative(root, uri.fsPath);
-			return !this.gitIgnore.ignores(rel);
-		});
+		const codeFiles = allFiles.filter(uri => !this.isIgnoredWorkspacePath(uri.fsPath, 'code scan'));
 
 		await Promise.all(codeFiles.map(uri => this.updateLocationsFromCacheByCodeUri(uri)));
 	}
@@ -717,11 +806,11 @@ export default class SettingUtils implements vscode.Disposable {
 	}
 
 	static isResourceFilePath(path: string): boolean {
-		return this._instance.mm.match(path || "");
+		const comparablePath = this._instance.getGlobComparablePath(path || "");
+		return this._instance.mm.match(comparablePath) && !this._instance.isIgnoredWorkspacePath(path, 'resource file check');
 	}
 	static isCodeFilePath(path: string): boolean {
-		const relativePath = vscode.workspace.asRelativePath(path);
-		if (this._instance.gitIgnore.ignores(relativePath)) {
+		if (this._instance.isIgnoredWorkspacePath(path, 'code file check')) {
 			return false;
 		}
 		const match = this._instance.codeFileRegex.exec(path);
@@ -753,6 +842,10 @@ export default class SettingUtils implements vscode.Disposable {
 	}
 	static isRevealTreeView(): boolean {
 		const value = vscode.workspace.getConfiguration(extensionName).get(settings.revealTreeView, false);
+		return value;
+	}
+	static isExperimentalMultilineTranslationInput(): boolean {
+		const value = vscode.workspace.getConfiguration(extensionName).get(settings.experimentalMultilineTranslationInput, true);
 		return value;
 	}
 	static getResourceCodeMatch(str: string): RegExpExecArray | null {
